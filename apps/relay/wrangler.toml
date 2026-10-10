@@ -1,0 +1,18 @@
+# OPTIONAL: only needed if you deploy the relay to Cloudflare Workers.
+# The Node relay (npm run start) needs none of this.
+name = "notes-hq-relay"
+main = "src/cloudflare/worker.ts"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+[vars]
+# Comma-separated list of origins allowed to connect, e.g. "https://notes.example.com".
+# Empty = allow any origin.
+ALLOWED_ORIGINS = ""

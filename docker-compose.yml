@@ -1,0 +1,16 @@
+# Example deployment. Put a TLS-terminating reverse proxy in front of it
+# (see docs/SELF_HOSTING.md), because browsers require HTTPS for this app.
+services:
+  notes-hq:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      - notes-hq-data:/data
+    environment:
+      # Comma-separated origins allowed to open sync sockets. Empty = any.
+      ALLOWED_ORIGINS: ""
+
+volumes:
+  notes-hq-data:

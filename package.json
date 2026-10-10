@@ -1,0 +1,23 @@
+{
+  "name": "notes-hq",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local-first notes that sync across your own devices through a relay you host.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace @notes-hq/relay & npm run dev --workspace @notes-hq/web",
+    "dev:web": "npm run dev --workspace @notes-hq/web",
+    "dev:relay": "npm run dev --workspace @notes-hq/relay",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  }
+}
