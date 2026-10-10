@@ -1,5 +1,5 @@
 /**
- * OPTIONAL Cloudflare adapter. The Node relay (src/node) is the reference
+ * OPTIONAL Cloudflare adapter. The self-hosted relay (src/server) is the reference
  * runtime; this file lets the same core run on Cloudflare Workers + SQLite-backed
  * Durable Objects (available on the Workers Free plan) for people who prefer it.
  *

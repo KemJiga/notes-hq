@@ -17,24 +17,24 @@ Read [docs/DESIGN.md](docs/DESIGN.md) for the full reasoning.
 
 ## Quick start (development)
 
-Requires Node.js 22.13+.
+Requires [Bun](https://bun.sh) 1.4+.
 
 ```sh
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 This starts the relay on `:8787` and the app on Vite's dev server (`:5173`). Open the app, click **Local only**, and choose **Start a new sync session** (the relay `ws://localhost:8787` is pre-filled). Then open the join link in another browser profile to watch two "devices" sync.
 
-Other scripts: `npm run build`, `npm run typecheck`, `npm test`.
+Other scripts: `bun run build`, `bun run typecheck`, `bun run test`.
 
 ## Self-hosting
 
 One command, one process, app and relay together:
 
 ```sh
-npm ci && npm run build
-cd apps/relay && STATIC_DIR=../web/dist npm start
+bun install --frozen-lockfile && bun run build
+cd apps/relay && STATIC_DIR=../web/dist bun run start
 ```
 
 Or use Docker: `docker compose up -d`.
@@ -46,7 +46,7 @@ Browsers require **HTTPS** for this app (except on `localhost`), including on a 
 ```
 packages/protocol   shared wire types + validation
 apps/web            installable web app (Vite + Preact + Yjs)
-apps/relay          relay: runtime-agnostic core + Node runtime + optional Cloudflare runtime
+apps/relay          relay: runtime-agnostic core + self-hosted server (Bun) + optional Cloudflare runtime
 docs/               DESIGN.md · PROTOCOL.md · SELF_HOSTING.md
 ```
 

@@ -39,7 +39,7 @@ Guiding requirements:
  │                        │          ├───┼──  updates) ───┼──► per (room, doc), plus snapshots  │
  │                 IndexedDB (state, │   │                │    broadcast to other devices       │
  │                 seq, pending)     │   │                │                                     │
- │                                   │   │                │  SQLite (node:sqlite, or a          │
+ │                                   │   │                │  SQLite (node:sqlite on Bun, or a   │
  │   AES-GCM + HKDF (WebCrypto) ◄────┘   │                │   Durable Object's SQLite)          │
  └───────────────────────────────────────┘                └─────────────────────────────────────┘
 ```
@@ -51,7 +51,7 @@ packages/protocol   wire types, validation, base64url (shared by app and relay)
 apps/web            the installable web app (Vite + Preact + Yjs)
 apps/relay          the relay
   src/core          runtime-agnostic store + message handling
-  src/node          reference runtime: Node 22 + node:sqlite + ws; can also serve the app
+  src/server        reference self-hosted server (runs on Bun; Node-compatible): node:sqlite + ws; can also serve the app
   src/cloudflare    optional runtime: Workers + SQLite-backed Durable Objects
 docs/               this file, PROTOCOL.md, SELF_HOSTING.md
 ```
@@ -125,14 +125,14 @@ Each decision lists what was chosen, why, and what was considered.
 **Why:** it's tiny (a few hundred lines), cheap to run, easy to audit, and easy to reimplement on any platform.
 **Consequence:** compaction has to be client-driven (see §3, step 7).
 
-### D6. Provider-neutral relay, with Node as the reference runtime
+### D6. Provider-neutral relay, with a self-hosted server as the reference
 
 **Chosen:** the relay logic (`apps/relay/src/core`) is written against a one-function SQL interface and a minimal `Peer` interface. Two runtimes ship:
-- **Node 22+** (reference): uses the built-in `node:sqlite` and `ws`, has no native modules, runs anywhere Node runs, and can also serve the built app so one process covers everything. Docker image included.
+- **Self-hosted server** (`src/server`, reference): runs on **Bun** (see D12). It only uses standard modules (`node:http`, `node:sqlite`) and `ws`, so it has no native modules and builds into one self-contained file that also runs unchanged on Node.js 22.13+. It can also serve the built app, so one process covers everything. Docker image included.
 - **Cloudflare Workers + Durable Objects** (optional): uses the same core and fits the Workers free plan. It uses the WebSocket Hibernation API and keeps all state in the object's SQLite storage.
 
 **History:** an earlier draft of this design targeted Cloudflare's free tier directly. That was revised so that no part of the project depends on one vendor. Cloudflare became one deployment option among several.
-**Considered:** Bun (fast, but Node is more universally available), and Postgres or Redis backends (unnecessary for this workload; SQLite is a single file). Others can add runtimes, such as Deno or another edge platform, by implementing `Sql` and `Peer`.
+**Considered:** Bun-only APIs such as `bun:sqlite` and `Bun.serve` (faster, but they would tie the server to one runtime; the standard modules keep Node as a fallback), and Postgres or Redis backends (unnecessary for this workload; SQLite is a single file). Others can add runtimes, such as Deno or another edge platform, by implementing `Sql` and `Peer`.
 
 ### D7. Installable web app (PWA) first
 
@@ -164,10 +164,12 @@ Each decision lists what was chosen, why, and what was considered.
 
 Browsers only provide WebCrypto (`crypto.subtle`) and service workers in a **secure context**: `https://` or `http://localhost`. A plain `http://192.168.x.x` page can't encrypt or work offline. The app checks for this at startup and explains it. [SELF_HOSTING.md](./SELF_HOSTING.md) covers ways to get HTTPS on a LAN (a local CA with Caddy, mkcert, or a real domain with a DNS challenge).
 
-### D12. Monorepo with plain npm workspaces
+### D12. Monorepo on Bun
 
-**Chosen:** npm workspaces (`packages/*`, `apps/*`), TypeScript everywhere, Vite for the app, and esbuild to bundle the relay into one file.
-**Why:** this setup adds no extra tooling for contributors and self-hosters, and the protocol types are shared, so the app and the relay can't drift apart.
+**Chosen:** [Bun](https://bun.sh) as package manager, script runner, test runner, bundler and server runtime. Bun workspaces (`packages/*`, `apps/*`), TypeScript everywhere, Vite for the app, `bun build` to bundle the relay into one file, `bun test` for tests.
+**Why:** one fast tool replaces npm, tsx, esbuild and a separate test runner, which keeps installs and CI quick and the toolchain small. The protocol types are shared, so the app and the relay can't drift apart.
+**Portability:** the relay code avoids Bun-only APIs (see D6), so self-hosters who can't install Bun can still run the built relay on Node.js.
+**History:** the first scaffold used npm workspaces with Node, tsx and esbuild; it moved to Bun before v0.
 
 ### D13. Editor: undecided (textarea placeholder)
 

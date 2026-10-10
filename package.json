@@ -9,15 +9,16 @@
     "packages/*",
     "apps/*"
   ],
-  "engines": {
-    "node": ">=22.13"
-  },
   "scripts": {
-    "dev": "npm run dev --workspace @notes-hq/relay & npm run dev --workspace @notes-hq/web",
-    "dev:web": "npm run dev --workspace @notes-hq/web",
-    "dev:relay": "npm run dev --workspace @notes-hq/relay",
-    "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "dev": "bun run --filter '@notes-hq/relay' --filter '@notes-hq/web' dev",
+    "dev:web": "bun run --filter '@notes-hq/web' dev",
+    "dev:relay": "bun run --filter '@notes-hq/relay' dev",
+    "build": "bun run --filter '*' build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun run --filter '*' test"
+  },
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4"
   }
 }

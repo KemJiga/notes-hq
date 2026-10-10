@@ -1,5 +1,5 @@
 # OPTIONAL: only needed if you deploy the relay to Cloudflare Workers.
-# The Node relay (npm run start) needs none of this.
+# The self-hosted relay (bun run start) needs none of this.
 name = "notes-hq-relay"
 main = "src/cloudflare/worker.ts"
 compatibility_date = "2025-09-01"

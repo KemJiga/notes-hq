@@ -1,5 +1,5 @@
 /**
- * Storage for one relay. Both supported runtimes (Node's built-in `node:sqlite`
+ * Storage for one relay. Both supported runtimes (`node:sqlite`, built into Bun and Node,
  * and SQLite-backed Cloudflare Durable Objects) expose a synchronous SQL API,
  * so the whole store is written once against a tiny `Sql` function.
  *

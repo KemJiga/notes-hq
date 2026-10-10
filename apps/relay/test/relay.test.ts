@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { WebSocket } from "ws";
 import type { ServerMsg } from "@notes-hq/protocol";
-import { startRelay, type RunningRelay } from "../src/node/server.js";
+import { startRelay, type RunningRelay } from "../src/server/server.js";
 
 const ROOM = "room_aaaaaaaaaaaaaaaa";
 const DOC = "doc_bbbbbbbbbbbbbbbbb";

@@ -2,7 +2,7 @@
 
 notes-hq has two parts:
 
-- **The app:** static files (HTML, JS, CSS) produced by `npm run build`. Any static web server can host them.
+- **The app:** static files (HTML, JS, CSS) produced by `bun run build`. Any static web server can host them.
 - **The relay:** a small WebSocket service that stores and forwards **encrypted** updates between your devices. It never sees your notes.
 
 You can run both from one process (simplest) or host them separately. Nothing here depends on a particular provider, operating system, or device.
@@ -10,7 +10,7 @@ You can run both from one process (simplest) or host them separately. Nothing he
 > **Requirement: HTTPS.** Browsers only allow the encryption and offline features this app needs on `https://` pages (or `http://localhost`). Every setup below ends with HTTPS in front of the app and relay. See [Getting HTTPS](#getting-https).
 
 Contents:
-- [Option A: one Node process](#option-a-one-node-process)
+- [Option A: one Bun process](#option-a-one-bun-process)
 - [Option B: Docker](#option-b-docker)
 - [Option C: LAN-only home server](#option-c-lan-only-home-server)
 - [Option D: app and relay hosted separately](#option-d-app-and-relay-hosted-separately)
@@ -21,20 +21,22 @@ Contents:
 
 ---
 
-## Option A: one Node process
+## Option A: one Bun process
 
-Requirements: Node.js **22.13 or newer**. The relay uses Node's built-in SQLite, so there are no native modules to compile.
+Requirements: [Bun](https://bun.sh) **1.4 or newer**. The relay uses the built-in `node:sqlite` module, so there are no native modules to compile.
 
 ```sh
 git clone https://github.com/KemJiga/notes-hq.git
 cd notes-hq
-npm ci
-npm run build
+bun install --frozen-lockfile
+bun run build
 
 # Serve the app and the relay together on port 8787
 cd apps/relay
-STATIC_DIR=../web/dist DATA_DIR=./data npm start
+STATIC_DIR=../web/dist DATA_DIR=./data bun run start
 ```
+
+`bun run build` produces a single self-contained file, `apps/relay/dist/relay.js`. You can copy just that file (plus `apps/web/dist/` if you serve the app) to a server and run it with `bun relay.js`. No `node_modules` is needed. The same bundle also runs on Node.js 22.13+ (`node relay.js`) if you'd rather not install Bun on the server.
 
 Open `http://localhost:8787` on the same machine to try it. To reach it from other devices, put a reverse proxy with HTTPS in front of it (see [Getting HTTPS](#getting-https)).
 
@@ -53,7 +55,7 @@ WorkingDirectory=/opt/notes-hq/apps/relay
 Environment=STATIC_DIR=/opt/notes-hq/apps/web/dist
 Environment=DATA_DIR=/var/lib/notes-hq
 Environment=HOST=127.0.0.1
-ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning dist/relay.mjs
+ExecStart=/usr/local/bin/bun dist/relay.js
 Restart=on-failure
 User=notes-hq
 
@@ -101,7 +103,7 @@ Use this when you want the app on a static host (any CDN, GitHub Pages, Netlify,
 
 1. Build the app, optionally pre-filling the relay address users will see:
    ```sh
-   VITE_RELAY_URL=wss://relay.example.com npm run build --workspace @notes-hq/web
+   VITE_RELAY_URL=wss://relay.example.com bun run --filter '@notes-hq/web' build
    ```
    Upload `apps/web/dist/` to your static host. Configure it to serve `index.html` for unknown paths (SPA fallback) and **not to cache** `sw.js` and `index.html`. Files under `assets/` can be cached forever.
 2. Run the relay (Option A without `STATIC_DIR`, or Option B), behind HTTPS.
@@ -118,8 +120,8 @@ An adapter in `apps/relay/src/cloudflare` runs the same relay core on Workers wi
 
 ```sh
 cd apps/relay
-npx wrangler login
-npx wrangler deploy           # uses wrangler.toml
+bunx wrangler login
+bunx wrangler deploy          # uses wrangler.toml
 ```
 
 Set `ALLOWED_ORIGINS` under `[vars]` in `wrangler.toml`. Free-plan limits apply. If a daily limit is reached, devices keep working offline and sync again after the reset.
@@ -130,7 +132,7 @@ Want to add another runtime, such as Deno or another edge platform? Implement th
 
 ## Configuration reference
 
-Relay (Node), set as environment variables:
+Relay (self-hosted server), set as environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
@@ -186,6 +188,6 @@ For LAN-only servers, see [Option C](#option-c-lan-only-home-server).
 ## Backups, upgrades, and moving
 
 - **What to back up:** your devices hold the real data. The relay's `DATA_DIR/relay.sqlite` contains only ciphertext. It's a useful encrypted off-site copy, but it can't be read without a join link. Keep a join link somewhere safe, such as a password manager. That's the only thing needed to decrypt.
-- **Upgrading:** pull, `npm ci && npm run build`, and restart (or rebuild the image). The relay creates its tables if they're missing.
+- **Upgrading:** pull, `bun install --frozen-lockfile && bun run build`, and restart (or rebuild the image). The relay creates its tables if they're missing.
 - **Moving to a new relay:** on one device, open Sync, stop syncing, and start a new session with the new relay URL. Then re-join your other devices with the new link. Each device uploads its local notes, and they merge automatically.
 - **Removing a device you lost:** do the same thing. Start a new session and only re-join the devices you still trust. The old link stops being useful once the old relay data is deleted.
