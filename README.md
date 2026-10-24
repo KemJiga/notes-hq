@@ -123,17 +123,25 @@ To update later, `git pull`, then repeat steps 2–4. Using your own domain? Add
 
 ### Deploy from GitHub Actions
 
-Once steps 1–4 have run once (so the Worker and Pages project exist), [deploy-cloudflare.yml](.github/workflows/deploy-cloudflare.yml) can redeploy both on every version tag, or on demand from the *Actions* tab. In your fork's *Settings → Secrets and variables → Actions*, add:
+Once steps 1–4 have run once (so the Worker and Pages project exist), [deploy-cloudflare.yml](.github/workflows/deploy-cloudflare.yml) can redeploy both on every version tag, or on demand from the *Actions* tab.
 
-| Kind | Name | Value |
-|---|---|---|
-| Secret | `CLOUDFLARE_API_TOKEN` | A [custom API token](https://dash.cloudflare.com/profile/api-tokens) with *Account → Workers Scripts: Edit* and *Account → Cloudflare Pages: Edit* |
-| Secret | `CLOUDFLARE_ACCOUNT_ID` | Your account ID (dashboard → *Workers & Pages*, right sidebar) |
-| Variable | `CF_RELAY_URL` | `wss://notes-hq-relay.<your-subdomain>.workers.dev` |
-| Variable | `CF_ALLOWED_ORIGINS` | `https://notes-hq.pages.dev` (comma-separated if several) |
-| Variable | `CF_PAGES_PROJECT` | Optional, defaults to `notes-hq` |
+1. In *Settings → Environments*, create an environment named `cloudflare`. Turn on *Required reviewers* (add yourself) and, under *Deployment branches and tags*, allow only the tag pattern `v*` (and `main` if you dispatch from it).
+2. Add these **environment secrets** to `cloudflare`. Keeping them out of repository secrets means only approved runs of the deploy job can read them:
 
-The workflow sets `ALLOWED_ORIGINS` from the variable, so `wrangler.toml` can stay unedited. It is skipped when `CF_RELAY_URL` isn't set.
+   | Name | Value |
+   |---|---|
+   | `CLOUDFLARE_API_TOKEN` | A [custom API token](https://dash.cloudflare.com/profile/api-tokens) with *Account → Workers Scripts: Edit* and *Account → Cloudflare Pages: Edit* |
+   | `CLOUDFLARE_ACCOUNT_ID` | Your account ID (dashboard → *Workers & Pages*, right sidebar) |
+
+3. In *Settings → Secrets and variables → Actions → Variables*, add these **repository variables**:
+
+   | Name | Value |
+   |---|---|
+   | `CF_RELAY_URL` | `wss://notes-hq-relay.<your-subdomain>.workers.dev` |
+   | `CF_ALLOWED_ORIGINS` | `https://notes-hq.pages.dev` (comma-separated if several; required) |
+   | `CF_PAGES_PROJECT` | Optional, defaults to `notes-hq` |
+
+Tests and the app build run in a job with no access to the secrets; the deploy job waits for your approval. The workflow sets `ALLOWED_ORIGINS` from the variable, so `wrangler.toml` can stay unedited. It is skipped when `CF_RELAY_URL` isn't set.
 
 ## Repository layout
 
