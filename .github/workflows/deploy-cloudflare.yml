@@ -1,0 +1,37 @@
+# Deploys the relay to Cloudflare Workers and the app to Cloudflare Pages.
+# Runs on version tags and on demand; skipped unless the repo variable CF_RELAY_URL is set,
+# so forks without a Cloudflare setup are unaffected. Setup: README "Deploy from GitHub Actions".
+# Third-party actions are pinned to commit SHAs (version in the comment) because this job can publish.
+name: deploy-cloudflare
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency: deploy-cloudflare
+jobs:
+  deploy:
+    if: vars.CF_RELAY_URL != ''
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+      - name: Deploy relay
+        working-directory: apps/relay
+        run: bunx wrangler deploy --var "ALLOWED_ORIGINS:${{ vars.CF_ALLOWED_ORIGINS }}"
+      - name: Build app
+        run: bun run --filter '@notes-hq/web' build
+        env:
+          VITE_RELAY_URL: ${{ vars.CF_RELAY_URL }}
+      - name: Deploy app
+        working-directory: apps/web
+        run: bunx wrangler pages deploy dist --project-name "${{ vars.CF_PAGES_PROJECT || 'notes-hq' }}" --branch main

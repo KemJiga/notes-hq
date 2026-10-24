@@ -71,6 +71,70 @@ Or use Docker: `docker compose up -d`.
 
 Browsers require **HTTPS** for this app (except on `localhost`), including on a LAN. [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) covers single-process, Docker, LAN-only home servers, split static-host + relay setups, an optional Cloudflare Workers adapter, and HTTPS.
 
+## Deploying to Cloudflare
+
+No server to run: the relay goes on **Workers** (with SQLite-backed Durable Objects) and the app on **Pages**. Both work on the free plan and come with HTTPS. You need a Cloudflare account and the steps below, run from the repo root after `bun install`.
+
+**1. Log in.**
+
+```sh
+cd apps/relay
+bunx wrangler login
+```
+
+**2. Deploy the relay.**
+
+```sh
+bunx wrangler deploy
+```
+
+Wrangler prints the relay's address, e.g. `https://notes-hq-relay.<your-subdomain>.workers.dev`. Check it with `curl https://notes-hq-relay.<your-subdomain>.workers.dev/healthz` (prints `ok`).
+
+**3. Build the app pointed at the relay.** Use the address from step 2 with `wss://`:
+
+```sh
+cd ../..
+VITE_RELAY_URL=wss://notes-hq-relay.<your-subdomain>.workers.dev bun run --filter '@notes-hq/web' build
+```
+
+**4. Deploy the app to Pages.**
+
+```sh
+bunx wrangler pages project create notes-hq --production-branch main   # first time only
+bunx wrangler pages deploy apps/web/dist --project-name notes-hq
+```
+
+The app is now at `https://notes-hq.pages.dev` (or the name Pages assigns if that one is taken).
+
+**5. Lock the relay to your app.** In [apps/relay/wrangler.toml](apps/relay/wrangler.toml), set the app's origin, then redeploy the relay:
+
+```toml
+[vars]
+ALLOWED_ORIGINS = "https://notes-hq.pages.dev"
+```
+
+```sh
+cd apps/relay && bunx wrangler deploy
+```
+
+Open the Pages URL, write a note, and click **Local only** → **Start a new sync session**; the relay is pre-filled. Open the join link on your other devices.
+
+To update later, `git pull`, then repeat steps 2–4. Using your own domain? Add it under *Workers & Pages → your project → Custom domains*, rebuild the app if the relay address changed, and add the new origin to `ALLOWED_ORIGINS` (comma-separated). Free-plan limits apply; if a daily limit is hit, devices keep working offline and sync again after the reset. More in [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#option-e-cloudflare-workers-optional).
+
+### Deploy from GitHub Actions
+
+Once steps 1–4 have run once (so the Worker and Pages project exist), [deploy-cloudflare.yml](.github/workflows/deploy-cloudflare.yml) can redeploy both on every version tag, or on demand from the *Actions* tab. In your fork's *Settings → Secrets and variables → Actions*, add:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `CLOUDFLARE_API_TOKEN` | A [custom API token](https://dash.cloudflare.com/profile/api-tokens) with *Account → Workers Scripts: Edit* and *Account → Cloudflare Pages: Edit* |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | Your account ID (dashboard → *Workers & Pages*, right sidebar) |
+| Variable | `CF_RELAY_URL` | `wss://notes-hq-relay.<your-subdomain>.workers.dev` |
+| Variable | `CF_ALLOWED_ORIGINS` | `https://notes-hq.pages.dev` (comma-separated if several) |
+| Variable | `CF_PAGES_PROJECT` | Optional, defaults to `notes-hq` |
+
+The workflow sets `ALLOWED_ORIGINS` from the variable, so `wrangler.toml` can stay unedited. It is skipped when `CF_RELAY_URL` isn't set.
+
 ## Repository layout
 
 ```

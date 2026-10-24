@@ -20,5 +20,8 @@
   "packageManager": "bun@1.4.2",
   "engines": {
     "bun": ">=1.4"
+  },
+  "devDependencies": {
+    "wrangler": "^4.150.0"
   }
 }
