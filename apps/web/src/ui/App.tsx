@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type * as Y from "yjs";
-import { createNote, deleteNote, listNotes, openIndex, openNoteBody, touchNote, type NoteMeta } from "../notes";
+import { createNote, deleteNote, listNotes, openIndex, type NoteMeta } from "../notes";
 import { engine, type SyncStatus } from "../sync/engine";
 import type { Session } from "../sync/session";
+import { NoteEditor } from "./NoteEditor";
 import { SyncPanel } from "./SyncPanel";
-import { useTextBinding } from "./useTextBinding";
 
 export function App({ initialSession }: { initialSession: Session | null }) {
   const [index, setIndex] = useState<Y.Map<Y.Map<unknown>> | null>(null);
@@ -55,7 +55,7 @@ export function App({ initialSession }: { initialSession: Session | null }) {
       </aside>
       <main>
         {selected && index ? (
-          <Editor
+          <NoteEditor
             key={selected}
             id={selected}
             index={index}
@@ -71,23 +71,6 @@ export function App({ initialSession }: { initialSession: Session | null }) {
       {panelOpen && (
         <SyncPanel session={session} status={status} onChange={setSession} onClose={() => setPanelOpen(false)} />
       )}
-    </div>
-  );
-}
-
-function Editor({ id, index, onDelete }: { id: string; index: Y.Map<Y.Map<unknown>>; onDelete: () => void }) {
-  const [text, setText] = useState<Y.Text | null>(null);
-  useEffect(() => {
-    void openNoteBody(id).then(setText);
-  }, [id]);
-  const onLocal = useCallback((v: string) => touchNote(index, id, v), [index, id]);
-  const ref = useTextBinding(text, onLocal);
-  return (
-    <div class="editor">
-      <div class="toolbar">
-        <button class="danger" onClick={onDelete}>Delete</button>
-      </div>
-      <textarea ref={ref} disabled={!text} placeholder="Start writing…" autoFocus />
     </div>
   );
 }

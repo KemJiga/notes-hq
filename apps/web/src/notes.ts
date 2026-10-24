@@ -1,7 +1,7 @@
 /**
  * Data model.
  *   "index"       one Y.Doc: Y.Map "notes" of id -> Y.Map { title, createdAt, updatedAt, deleted }
- *   "note:<id>"   one Y.Doc per note: Y.Text "body"
+ *   "note:<id>"   one Y.Doc per note: Y.XmlFragment "content" (ProseMirror document via y-prosemirror)
  * The index syncs eagerly; note bodies are opened (and synced) on demand,
  * so startup cost does not grow with the size of the archive.
  */
@@ -53,16 +53,16 @@ export function deleteNote(notes: Y.Map<Y.Map<unknown>>, id: string): void {
   }
 }
 
-export async function openNoteBody(id: string): Promise<Y.Text> {
+export async function openNoteContent(id: string): Promise<Y.XmlFragment> {
   const doc = await engine.open(`note:${id}`);
-  return doc.getText("body");
+  return doc.getXmlFragment("content");
 }
 
-/** Keeps the index entry's title and timestamp in step with local edits of the body. */
-export function touchNote(notes: Y.Map<Y.Map<unknown>>, id: string, body: string): void {
+/** Keeps the index entry's title (text of the first block) and timestamp in step with local edits. */
+export function touchNote(notes: Y.Map<Y.Map<unknown>>, id: string, firstBlock: string): void {
   const m = notes.get(id);
   if (!m) return;
-  const title = body.trimStart().split("\n", 1)[0]!.slice(0, 120);
+  const title = firstBlock.trim().slice(0, 120);
   m.doc!.transact(() => {
     if (m.get("title") !== title) m.set("title", title);
     m.set("updatedAt", Date.now());

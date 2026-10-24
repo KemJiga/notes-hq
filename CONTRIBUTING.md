@@ -14,6 +14,7 @@ bun install
 bun run typecheck
 bun run test
 bun run build
+cd apps/web && bun run e2e   # browser tests; first time: bunx playwright install chromium
 ```
 
 Protocol changes must update `docs/PROTOCOL.md` and `packages/protocol` together. Design changes should add or amend an entry in `docs/DESIGN.md` §4.

@@ -4,7 +4,7 @@ Local-first notes that sync across **your own devices** (PC, laptop, phone, tabl
 
 The long-term goal is a personal archive: notes plus things you save from the web (articles, videos, posts), all in one place you control.
 
-> **Status:** early scaffold. Sync works end to end. The editor is a placeholder textarea, and archive features aren't built yet. See the [roadmap](docs/DESIGN.md#7-roadmap-and-open-questions).
+> **Status:** early scaffold. Sync and the rich text editor work end to end. Archive features aren't built yet. See the [roadmap](docs/DESIGN.md#7-roadmap-and-open-questions).
 
 ## How it works
 
@@ -15,7 +15,37 @@ The long-term goal is a personal archive: notes plus things you save from the we
 
 Read [docs/DESIGN.md](docs/DESIGN.md) for the full reasoning.
 
-## Quick start (development)
+## Quick start
+
+Run the app and the relay together with the prebuilt Docker image:
+
+```sh
+docker run -d --name notes-hq -p 8787:8787 -v notes-hq-data:/data ghcr.io/kemjiga/notes-hq:latest
+```
+
+Open <http://localhost:8787>, write a note, then click **Local only** → **Start a new sync session**. Open the join link it shows on your other devices to sync them.
+
+No Docker? Download `notes-hq-<version>.tar.gz` from [Releases](https://github.com/KemJiga/notes-hq/releases), extract it, and run:
+
+```sh
+cd notes-hq-<version>
+STATIC_DIR=web bun relay.js     # or: STATIC_DIR=web node relay.js  (Node.js 22.13+)
+```
+
+Other devices can only connect over **HTTPS** (browsers require it for encryption and offline support, even on a LAN). Put a reverse proxy in front of port 8787; [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md#getting-https) shows how.
+
+## Releases
+
+Releases are listed on the [Releases page](https://github.com/KemJiga/notes-hq/releases). Each one ships:
+
+- `notes-hq-<version>.tar.gz`: the relay as a single file (`relay.js`, runs on Bun or Node.js 22.13+) plus the built app (`web/`). No `node_modules` needed.
+- A Docker image: `ghcr.io/kemjiga/notes-hq:<version>`, `:<major>.<minor>`, and `:latest` for the newest stable release.
+
+Versions follow [semver](https://semver.org). Until 1.0, a minor version (0.x → 0.y) may include breaking changes; the release notes call them out. To upgrade, replace the files or pull the new image and restart; your data lives in `DATA_DIR` (the `/data` volume in Docker) and on your devices.
+
+To cut a release, push a version tag: `git tag v0.2.0 && git push origin v0.2.0`. The [release workflow](.github/workflows/release.yml) builds, publishes both artifacts, and writes release notes from the merged PRs. Tags with a suffix (`v0.2.0-rc.1`) become prereleases.
+
+## Development
 
 Requires [Bun](https://bun.sh) 1.4+.
 
@@ -28,7 +58,7 @@ This starts the relay on `:8787` and the app on Vite's dev server (`:5173`). Ope
 
 Other scripts: `bun run build`, `bun run typecheck`, `bun run test`.
 
-## Self-hosting
+## Self-hosting from source
 
 One command, one process, app and relay together:
 
