@@ -2,7 +2,7 @@
 
 This document records what notes-hq is trying to be, the decisions made so far, and why. It is written for anyone who wants to run, fork, or contribute to the project. When a decision changes, update it here, and keep the old reasoning under a "Superseded" note so the history stays readable.
 
-Status: **early scaffold (v0.1)**. The sync core works end to end. The editor, the archive features, and the polish do not exist yet.
+Status: **early scaffold (v0.1)**. The sync core and the rich text editor work end to end. The archive features and the polish do not exist yet.
 
 ---
 
@@ -144,13 +144,13 @@ Each decision lists what was chosen, why, and what was considered.
 
 **Chosen:** [Preact](https://preactjs.com/).
 **Why:** the project's author works in React. Preact has the same component and hooks API at about 4 KB, and `preact/compat` lets React libraries (including editor bindings) work unchanged. UI framework speed isn't the bottleneck in this app; local-first data access is what makes it fast.
-**Considered:** Solid (JSX, but a different reactivity model to learn), Svelte (its own templating), and React itself (fine, but about 10× larger). The full app bundle is currently about 35 KB gzipped.
+**Considered:** Solid (JSX, but a different reactivity model to learn), Svelte (its own templating), and React itself (fine, but about 10× larger). The app shell is currently about 38 KB gzipped; the editor loads as a separate chunk (see D13).
 
 ### D9. Data model: one index doc plus one doc per note
 
 **Chosen:**
 - `index`: a `Y.Map` of note id → `{ title, createdAt, updatedAt, deleted }`. It's opened and synced at startup.
-- `note:<uuid>`: a `Y.Text` body, opened and synced only when the note is opened.
+- `note:<uuid>`: a `Y.XmlFragment` named `content` holding the ProseMirror document (see D13), opened and synced only when the note is opened. The index title is the text of the note's first block, written by the device that edits it.
 
 **Why:** startup cost stays flat as the archive grows. Very large notes only cost something when they're opened. Deletion is a tombstone flag, so it syncs like any other edit.
 **Future:** archive items (saved links, media) will be new doc kinds listed in the same index (see §7).
@@ -171,11 +171,18 @@ Browsers only provide WebCrypto (`crypto.subtle`) and service workers in a **sec
 **Portability:** the relay code avoids Bun-only APIs (see D6), so self-hosters who can't install Bun can still run the built relay on Node.js.
 **History:** the first scaffold used npm workspaces with Node, tsx and esbuild; it moved to Bun before v0.
 
-### D13. Editor: undecided (textarea placeholder)
+### D13. Editor: Tiptap (ProseMirror) + Yjs
 
-The scaffold binds a plain `<textarea>` to `Y.Text` with a prefix/suffix diff, which is enough to prove sync. The real editor choice is still open:
-- **CodeMirror 6 + y-codemirror.next**: markdown-first and plain-text storage. Very fast on huge documents, and the lightest option.
-- **Tiptap/ProseMirror + y-prosemirror**: rich text, better for embedding archived media, heavier.
+**Chosen:** [Tiptap](https://tiptap.dev/) 3 on ProseMirror, bound to Yjs with `@tiptap/extension-collaboration` (y-prosemirror). Each note stores its document as a `Y.XmlFragment "content"`, so concurrent edits and formatting from offline devices still merge as a CRDT. The editor is driven through `@tiptap/core` directly from a small Preact component; it doesn't need `preact/compat` or `@tiptap/react`.
+**Supported:** headings 1–3, bold, italic, strikethrough, inline code, code blocks, bullet, numbered and check lists, quotes, horizontal rules and links, with markdown-style input rules (`# `, `- `, `1. `, `[] `, `> `, `**bold**`, `` `code` ``, ```` ``` ````). Undo/redo is Yjs-aware (it only undoes this device's changes). Every format also has a key combo (shown in the toolbar tooltips; Ctrl/⌘+K for links). On phones the toolbar sits at the bottom of the screen, above the keyboard and clear of the home indicator.
+**Why:** rich text was required (RAW-97). Tiptap gives the formatting, input rules and Yjs binding ready-made, and ProseMirror handles very large documents well: a 100k-word note opens in well under a second and types with single-digit-millisecond latency.
+**Bundle:** the editor is about 130 KB gzipped, almost all of it Tiptap core, ProseMirror and y-tiptap. Extensions are imported one by one instead of through StarterKit, so unused ones (history, drop/gap cursors, underline) stay out. The editor is loaded with `import()` when a note opens, so startup stays at the ~38 KB app shell; the service worker precaches the chunk, so it still works offline. The original budget of 120 KB was relaxed to ~135 KB for this chunk.
+**Considered:**
+- CodeMirror 6 + y-codemirror.next: lighter and markdown-first, but notes would be markdown source rather than formatted text.
+- Raw ProseMirror + y-prosemirror without Tiptap: saves about 25 KB gzipped, but means writing the schema, input rules, commands and task-list node view by hand.
+- A hand-written link mark instead of Tiptap's Link (drops `linkifyjs`, about 9 KB gzipped): rejected for now to keep URL auto-linking and Tiptap's URL validation.
+
+**Superseded:** the scaffold bound a plain `<textarea>` to a `Y.Text "body"` with a prefix/suffix diff, just to prove sync. Notes created with it aren't migrated.
 
 ---
 
@@ -204,7 +211,7 @@ Not protected against yet: a compromised device, metadata analysis by the relay 
 ## 7. Roadmap and open questions
 
 Near term:
-- [ ] Pick the editor (D13) and replace the textarea binding.
+- [x] Pick the editor (D13) and replace the textarea binding.
 - [ ] QR code for the join link (the main way phones will join).
 - [ ] Note list search (local, client-side full-text index).
 - [ ] Sync status per note, and a visible "unsynced changes" indicator.
@@ -219,7 +226,7 @@ Hardening:
 - [ ] Key rotation and device removal without manual re-joining.
 - [ ] Binary WebSocket frames (saves the ~33% base64 overhead).
 - [ ] Relay quotas and rate limits per room.
-- [ ] Automated browser tests in CI (two-device sync, offline/reconnect).
+- [x] Automated browser tests in CI (two-device sync, offline/reconnect): `apps/web/e2e`, Playwright.
 
 Open questions:
 - Should compaction thresholds adapt to doc size?
