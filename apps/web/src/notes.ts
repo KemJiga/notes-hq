@@ -1,13 +1,14 @@
 /**
  * Data model.
- *   "index"       one Y.Doc: Y.Map "notes" of id -> Y.Map { title, createdAt, updatedAt, deleted, tags },
- *                 and Y.Map "tags" (see tags.ts)
+ *   "index"       one Y.Doc: Y.Map "notes" of id -> Y.Map { title, createdAt, updatedAt, deleted, tags, folderId },
+ *                 Y.Map "tags" (see tags.ts) and Y.Map "folders" (see folders.ts)
  *   "note:<id>"   one Y.Doc per note: Y.XmlFragment "content" (ProseMirror document via y-prosemirror)
  * The index syncs eagerly; note bodies are opened (and synced) on demand,
  * so startup cost does not grow with the size of the archive.
  */
 import * as Y from "yjs";
 import { engine } from "./sync/engine";
+import { folderMap, folderOf } from "./folders";
 import { namesOf, tagMap } from "./tags";
 
 export interface NoteMeta {
@@ -16,6 +17,7 @@ export interface NoteMeta {
   createdAt: number;
   updatedAt: number;
   tags: string[];
+  folderId: string | null; // null = Unfiled
 }
 
 export async function openIndex(): Promise<Y.Map<Y.Map<unknown>>> {
@@ -34,12 +36,13 @@ export function listNotes(notes: Y.Map<Y.Map<unknown>>): NoteMeta[] {
       createdAt: Number(m.get("createdAt") ?? 0),
       updatedAt: Number(m.get("updatedAt") ?? 0),
       tags: namesOf(m, tags),
+      folderId: folderOf(notes, m),
     });
   });
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export function createNote(notes: Y.Map<Y.Map<unknown>>): string {
+export function createNote(notes: Y.Map<Y.Map<unknown>>, folderId: string | null = null): string {
   const id = crypto.randomUUID();
   const meta = new Y.Map<unknown>();
   const now = Date.now();
@@ -47,6 +50,7 @@ export function createNote(notes: Y.Map<Y.Map<unknown>>): string {
   meta.set("createdAt", now);
   meta.set("updatedAt", now);
   meta.set("tags", new Y.Map<true>());
+  meta.set("folderId", folderId !== null && folderMap(notes).has(folderId) ? folderId : null);
   notes.set(id, meta);
   return id;
 }
