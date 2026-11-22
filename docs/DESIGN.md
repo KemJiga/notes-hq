@@ -192,7 +192,7 @@ Browsers only provide WebCrypto (`crypto.subtle`) and service workers in a **sec
 - A cycle (A moved into B on one device, B into A on another) breaks at the folder with the smallest id, which goes to the top level. The repair depends only on the merged state, so every device shows the same tree and no folder is hidden.
 
 Names are checked for clashes only where the user types one. Merges, moves and deletes can still leave two same-name folders side by side, and both show. Deleting a folder moves its notes and subfolders to its parent. Sibling order is a number: a drop between two folders takes the midpoint (the siblings are renumbered when there's no room left), and ties break by id.
-**UI:** the sidebar lists All notes, Unfiled and the top-level folders only (the Folders section collapses, remembered per device). Deeper folders open from the note list, whose header shows a breadcrumb and the folder's actions (RAW-99).
+**UI:** the sidebar lists All notes, Unfiled and the top-level folders only (the Folders section collapses, remembered per device). Deeper folders open from the note list, whose header shows a breadcrumb and the folder's actions (RAW-99). Notes and folders move by drag & drop on desktop (a folder's top or bottom edge reorders, its middle nests), or with a "Move to…" sheet that also works by touch and keyboard: from the editor's folder chip, a folder's Move action, or Select mode for several notes at once.
 
 ---
 

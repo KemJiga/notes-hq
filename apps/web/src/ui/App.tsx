@@ -1,11 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import type * as Y from "yjs";
-import { buildTree, pathTo, type Tree } from "../folders";
+import { buildTree, moveNote, pathTo, type Tree } from "../folders";
 import { createNote, deleteNote, listNotes, openIndex, type NoteMeta } from "../notes";
 import { engine, type SyncStatus } from "../sync/engine";
 import type { Session } from "../sync/session";
 import { addTag, countTags, deleteTag, renameTag, withTags } from "../tags";
 import { ALL, FolderNav, ListHeader, SubfolderRows, UNFILED, type View } from "./Folders";
+import { dragSource, MoveSheet } from "./move";
 import { NoteEditor } from "./NoteEditor";
 import { SyncPanel } from "./SyncPanel";
 
@@ -19,23 +20,34 @@ export function App({ initialSession }: { initialSession: Session | null }) {
   const [active, setActive] = useState<string[]>([]);
   const [tree, setTree] = useState<Tree>({ folders: new Map(), roots: [] });
   const [view, setView] = useState<View>(ALL);
+  const [picked, setPicked] = useState<string[] | null>(null); // null = not selecting
+  const [moving, setMoving] = useState(false);
+  const open = (v: View) => {
+    setView(v);
+    setPicked(null);
+  };
 
   useEffect(() => engine.onStatus(setStatus), []);
 
   useEffect(() => {
-    let idx: Y.Map<Y.Map<unknown>>;
+    let idx: Y.Map<Y.Map<unknown>> | undefined;
+    let gone = false;
     const refresh = () => {
-      setNotes(listNotes(idx));
-      setTree(buildTree(idx));
+      setNotes(listNotes(idx!));
+      setTree(buildTree(idx!));
     };
     void openIndex().then((m) => {
+      if (gone) return;
       idx = m;
       setIndex(m);
       refresh();
       // Once per transaction, whether it touched notes, tags, folders or several of them.
       m.doc!.on("afterTransaction", refresh);
     });
-    return () => idx?.doc!.off("afterTransaction", refresh);
+    return () => {
+      gone = true;
+      idx?.doc!.off("afterTransaction", refresh);
+    };
   }, []);
 
   const tags = index ? countTags(index, notes) : [];
@@ -46,6 +58,8 @@ export function App({ initialSession }: { initialSession: Session | null }) {
   const folderId = here === ALL || here === UNFILED ? null : here;
   const inView = here === ALL ? notes : notes.filter((n) => n.folderId === folderId);
   const shown = withTags(inView, filter);
+  // Only what's still listed counts: a filter change or a delete elsewhere can hide picked notes.
+  const sel = picked?.filter((id) => shown.some((n) => n.id === id)) ?? [];
   // Notes per folder, subfolders included (null = Unfiled).
   const counts = new Map<string | null, number>();
   const inc = (k: string | null) => counts.set(k, (counts.get(k) ?? 0) + 1);
@@ -81,7 +95,7 @@ export function App({ initialSession }: { initialSession: Session | null }) {
             {status === "local-only" ? "Local only" : status}
           </button>
         </div>
-        {index && <FolderNav index={index} tree={tree} counts={counts} total={notes.length} here={here} onOpen={setView} />}
+        {index && <FolderNav index={index} tree={tree} counts={counts} total={notes.length} here={here} onOpen={open} />}
         {tags.length > 0 && (
           <nav class="tags" aria-label="Tags">
             {tags.map(([name, count]) => (
@@ -98,18 +112,48 @@ export function App({ initialSession }: { initialSession: Session | null }) {
             {filter.length === 1 && (
               <>
                 <button onClick={() => rename(filter[0]!)}>Rename</button>
-                <button class="danger" onClick={() => remove(filter[0]!, shown.length)}>Delete</button>
+                <button class="danger" onClick={() => remove(filter[0]!, tags.find(([t]) => t === filter[0])?.[1] ?? 0)}>Delete</button>
               </>
             )}
             <button onClick={() => setActive([])} aria-label="Clear tag filter">×</button>
           </div>
         )}
-        {index && <ListHeader index={index} tree={tree} counts={counts} here={here} shown={shown.length} onOpen={setView} />}
+        {index && (
+          <ListHeader index={index} tree={tree} counts={counts} here={here} shown={shown.length} onOpen={open}>
+            {picked === null ? (
+              <button onClick={() => setPicked([])}>Select</button>
+            ) : (
+              <>
+                <span class="count">{sel.length} selected</span>
+                <button aria-haspopup="dialog" disabled={!sel.length} onClick={() => setMoving(true)}>Move to…</button>
+                <button onClick={() => setPicked(null)}>Done</button>
+              </>
+            )}
+          </ListHeader>
+        )}
+        {index && moving && picked && (
+          <MoveSheet
+            index={index}
+            tree={tree}
+            title={`Move ${sel.length} note${sel.length === 1 ? "" : "s"}`}
+            rootLabel="Unfiled"
+            onPick={(id) => {
+              index.doc!.transact(() => sel.forEach((n) => moveNote(index, n, id)));
+              setPicked(null);
+            }}
+            onClose={() => setMoving(false)}
+          />
+        )}
         <ul>
-          <SubfolderRows tree={tree} counts={counts} here={here} onOpen={setView} />
+          {index && <SubfolderRows index={index} tree={tree} counts={counts} here={here} onOpen={open} />}
           {shown.map((n) => (
             <li key={n.id}>
-              <button class={n.id === selected ? "active" : ""} onClick={() => setSelected(n.id)}>
+              <button
+                class={n.id === selected ? "active" : ""}
+                aria-pressed={picked ? picked.includes(n.id) : undefined}
+                onClick={() => (picked ? setPicked(picked.includes(n.id) ? picked.filter((x) => x !== n.id) : [...picked, n.id]) : setSelected(n.id))}
+                {...dragSource("note", () => (sel.includes(n.id) ? sel : [n.id]))}
+              >
                 {n.title || "Untitled"}
                 <small>{new Date(n.updatedAt).toLocaleString()}</small>
               </button>
@@ -124,6 +168,8 @@ export function App({ initialSession }: { initialSession: Session | null }) {
             id={selected}
             index={index}
             tags={tags}
+            tree={tree}
+            folderId={notes.find((n) => n.id === selected)?.folderId ?? null}
             onDelete={() => {
               deleteNote(index, selected);
               setSelected(null);

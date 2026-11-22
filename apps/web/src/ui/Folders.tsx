@@ -1,6 +1,8 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type * as Y from "yjs";
-import { createFolder, deleteFolder, nameTaken, pathTo, renameFolder, type Tree } from "../folders";
+import { createFolder, deleteFolder, isWithin, moveFolder, nameTaken, pathTo, renameFolder, type Tree } from "../folders";
+import { dragSource, dropTarget, MoveSheet } from "./move";
 
 /** What the note list shows: every note, the notes without a folder, or one folder (by id; ids are UUIDs). */
 export const ALL = "all";
@@ -27,7 +29,7 @@ function saveCollapsed(v: boolean) {
 }
 
 /** Inline folder name field: Enter saves, Esc or leaving the field cancels. Flags names already used next to it. */
-function NameInput(props: { tree: Tree; parentId: string | null; initial?: string; except?: string; label: string; onSave: (name: string) => void; onCancel: () => void }) {
+export function NameInput(props: { tree: Tree; parentId: string | null; initial?: string; except?: string; label: string; onSave: (name: string) => void; onCancel: () => void }) {
   const { tree, parentId, initial = "", except, label, onSave, onCancel } = props;
   const [value, setValue] = useState(initial);
   const ref = useRef<HTMLInputElement>(null);
@@ -49,7 +51,10 @@ function NameInput(props: { tree: Tree; parentId: string | null; initial?: strin
         onInput={(e) => setValue(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.isComposing) return; // Enter is picking an IME candidate
-          if (e.key === "Escape") onCancel();
+          if (e.key === "Escape") {
+            e.preventDefault(); // inside the Move sheet, Esc cancels the name, not the sheet
+            onCancel();
+          }
           if (e.key === "Enter" && value.trim() && !taken) onSave(value);
         }}
         onBlur={onCancel}
@@ -72,8 +77,15 @@ export function FolderNav({ index, tree, counts, total, here, onOpen }: NavProps
     setCollapsed(v);
     saveCollapsed(v);
   };
+  const isFolder = (v: View) => v !== ALL && v !== UNFILED;
   const item = (view: View, icon: string, name: string, count: number) => (
-    <button key={view} class="nav-item" aria-current={view === top ? "page" : undefined} onClick={() => onOpen(view)}>
+    <button
+      key={view}
+      class="nav-item"
+      aria-current={view === top ? "page" : undefined}
+      onClick={() => onOpen(view)}
+      {...(isFolder(view) ? { ...dragSource("folder", () => [view]), ...dropTarget(index, tree, view, true) } : view === UNFILED ? dropTarget(index, tree, null) : {})}
+    >
       <span aria-hidden="true">{icon}</span>
       <span class="name">{name}</span>
       <span class="count">{count}</span>
@@ -105,9 +117,11 @@ export function FolderNav({ index, tree, counts, total, here, onOpen }: NavProps
           label="New folder name"
           onCancel={() => setCreating(false)}
           onSave={(name) => {
-            setCreating(false);
-            const id = createFolder(index, name);
-            if (id) onOpen(id);
+            const id = createFolder(index, name); // null if the name was taken meanwhile: the field stays, now flagged
+            if (id) {
+              setCreating(false);
+              onOpen(id);
+            }
           }}
         />
       )}
@@ -116,11 +130,11 @@ export function FolderNav({ index, tree, counts, total, here, onOpen }: NavProps
   );
 }
 
-type HeaderProps = { index: Index; tree: Tree; counts: Map<string | null, number>; here: View; shown: number; onOpen: (v: View) => void };
+type HeaderProps = { index: Index; tree: Tree; counts: Map<string | null, number>; here: View; shown: number; onOpen: (v: View) => void; children?: ComponentChildren };
 
 /** Note list header: breadcrumb to the open folder, note count, and the folder's actions. */
-export function ListHeader({ index, tree, counts, here, shown, onOpen }: HeaderProps) {
-  const [mode, setMode] = useState<"rename" | "create" | null>(null);
+export function ListHeader({ index, tree, counts, here, shown, onOpen, children }: HeaderProps) {
+  const [mode, setMode] = useState<"rename" | "create" | "move" | null>(null);
   const folder = tree.folders.get(here);
   const path = folder ? pathTo(tree, here) : [];
   useEffect(() => setMode(null), [here]);
@@ -150,7 +164,7 @@ export function ListHeader({ index, tree, counts, here, shown, onOpen }: HeaderP
           {path.map((f, i) =>
             i < path.length - 1 ? (
               <span key={f.id}>
-                <button class="crumb" onClick={() => onOpen(f.id)}>{f.name}</button>
+                <button class="crumb" onClick={() => onOpen(f.id)} {...dropTarget(index, tree, f.id)}>{f.name}</button>
                 <span aria-hidden="true"> / </span>
               </span>
             ) : mode === "rename" ? (
@@ -162,10 +176,7 @@ export function ListHeader({ index, tree, counts, here, shown, onOpen }: HeaderP
                 except={f.id}
                 label="Folder name"
                 onCancel={() => setMode(null)}
-                onSave={(name) => {
-                  setMode(null);
-                  renameFolder(index, f.id, name);
-                }}
+                onSave={(name) => renameFolder(index, f.id, name) && setMode(null)}
               />
             ) : (
               <strong key={f.id} aria-current="page">{f.name}</strong>
@@ -174,12 +185,28 @@ export function ListHeader({ index, tree, counts, here, shown, onOpen }: HeaderP
         </nav>
         <span class="count">{plural(shown, "note")}</span>
       </div>
-      {folder && (
-        <div class="actions">
-          <button onClick={() => setMode("create")}>New folder</button>
-          <button onClick={() => setMode("rename")}>Rename</button>
-          <button class="danger" onClick={remove}>Delete</button>
-        </div>
+      <div class="actions">
+        {folder && (
+          <>
+            <button onClick={() => setMode("create")}>New folder</button>
+            <button onClick={() => setMode("rename")}>Rename</button>
+            <button aria-haspopup="dialog" onClick={() => setMode("move")}>Move</button>
+            <button class="danger" onClick={remove}>Delete</button>
+          </>
+        )}
+        {children}
+      </div>
+      {folder && mode === "move" && (
+        <MoveSheet
+          index={index}
+          tree={tree}
+          title={`Move “${folder.name}”`}
+          rootLabel="Top level"
+          current={folder.parentId}
+          disabled={(id) => id !== null && isWithin(tree, id, folder.id)}
+          onPick={(id) => id !== folder.parentId && moveFolder(index, folder.id, id)} // re-picking its place keeps its order
+          onClose={() => setMode(null)}
+        />
       )}
       {folder && mode === "create" && (
         <NameInput
@@ -187,10 +214,7 @@ export function ListHeader({ index, tree, counts, here, shown, onOpen }: HeaderP
           parentId={folder.id}
           label={`New folder in ${folder.name}`}
           onCancel={() => setMode(null)}
-          onSave={(name) => {
-            setMode(null);
-            createFolder(index, name, folder.id);
-          }}
+          onSave={(name) => createFolder(index, name, folder.id) && setMode(null)}
         />
       )}
     </div>
@@ -198,7 +222,7 @@ export function ListHeader({ index, tree, counts, here, shown, onOpen }: HeaderP
 }
 
 /** The open folder's subfolders, as list items above its notes. */
-export function SubfolderRows({ tree, counts, here, onOpen }: Omit<HeaderProps, "index" | "shown">) {
+export function SubfolderRows({ index, tree, counts, here, onOpen }: Omit<HeaderProps, "shown">) {
   const children = tree.folders.get(here)?.children ?? [];
   return (
     <>
@@ -206,7 +230,7 @@ export function SubfolderRows({ tree, counts, here, onOpen }: Omit<HeaderProps, 
         const f = tree.folders.get(id)!;
         return (
           <li key={id}>
-            <button class="folder-row" onClick={() => onOpen(id)}>
+            <button class="folder-row" onClick={() => onOpen(id)} {...dragSource("folder", () => [id])} {...dropTarget(index, tree, id)}>
               <span aria-hidden="true">📁</span> {f.name}
               <small>{plural(counts.get(id) ?? 0, "note")}{f.children.length ? ` · ${plural(f.children.length, "folder")}` : ""}</small>
             </button>

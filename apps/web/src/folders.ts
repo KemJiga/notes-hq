@@ -118,6 +118,16 @@ export function renameFolder(notes: Notes, id: string, name: string): boolean {
 }
 
 /**
+ * If `id` is in a loop that buildTree breaks, the break is at the top of its path, and that folder still
+ * stores its link into the loop. Moving or deleting `id` without storing the break could re-route the loop:
+ * the top folder would end up inside `id`'s new place instead of staying where the user sees it.
+ */
+function storeBreak(tree: Tree, map: Y.Map<Y.Map<unknown>>, id: string) {
+  const top = pathTo(tree, id)[0]!;
+  if (top.id !== id && map.get(top.id)!.get("parentId") != null) map.get(top.id)!.set("parentId", null);
+}
+
+/**
  * Moves a folder into `parentId` (null = top level), placed before sibling `before`, or last.
  * Returns false when that would put the folder inside itself.
  */
@@ -131,6 +141,7 @@ export function moveFolder(notes: Notes, id: string, parentId: string | null, be
   const order = i < 0 ? (s.length ? o(s[s.length - 1]!) + 1 : 0) : i === 0 ? o(s[0]!) - 1 : (o(s[i - 1]!) + o(s[i]!)) / 2;
   const map = folderMap(notes);
   notes.doc!.transact(() => {
+    storeBreak(tree, map, id);
     map.get(id)!.set("parentId", parentId);
     // No room between the neighbours (equal orders from concurrent creates, or floats worn thin): renumber them all.
     if (i > 0 && (order === o(s[i - 1]!) || order === o(s[i]!))) {
@@ -160,10 +171,7 @@ export function deleteFolder(notes: Notes, id: string): void {
       map.get(c)!.set("parentId", f.parentId);
       map.get(c)!.set("order", next++);
     }
-    // If f is in a loop buildTree breaks, the break is at the top of f's path, which still stores its
-    // link into the loop. Store the break, or the children just moved into the loop would close a new one.
-    const top = pathTo(tree, id)[0]!;
-    if (top.id !== id && map.get(top.id)!.get("parentId") != null) map.get(top.id)!.set("parentId", null);
+    storeBreak(tree, map, id);
     notes.forEach((m) => m.get("folderId") === id && m.set("folderId", f.parentId));
     map.delete(id);
   });

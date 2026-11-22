@@ -195,6 +195,21 @@ test("deleting a folder from a repaired cycle stores no new cycle", () => {
   }
 });
 
+test("moving a folder out of a repaired cycle leaves the other folder where it was shown", () => {
+  let x = "", y = "";
+  const { a, b, sync } = twoDevices((n) => {
+    x = createFolder(n, "x")!;
+    y = createFolder(n, "y")!;
+  });
+  moveFolder(a, x, y);
+  moveFolder(b, y, x);
+  sync();
+  const [top, inner] = [x, y].sort() as [string, string]; // shown as top > inner
+  assert.ok(moveFolder(a, inner, null));
+  assert.deepEqual(buildTree(a).roots.sort(), [x, y].sort());
+  assert.equal(folderMap(a).get(top)!.get("parentId"), null, "the break is stored, not just repaired on read");
+});
+
 test("offline: folder deleted on one device while things move into it on the other", () => {
   let f = "", g = "", parent = "";
   const { a, b, sync } = twoDevices((n) => {

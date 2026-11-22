@@ -1,8 +1,10 @@
 import type { ChainedCommands, Editor } from "@tiptap/core";
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type * as Y from "yjs";
+import type { Tree } from "../folders";
 import { openNoteContent, touchNote } from "../notes";
 import { addTag, namesOf, removeTag, tagMap } from "../tags";
+import { FolderChip } from "./move";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
@@ -25,16 +27,17 @@ const TOOLS: Tool[] = [
   ["―", `Divider ("---")`, null, (c) => c.setHorizontalRule()],
 ];
 
-type Props = { id: string; index: Y.Map<Y.Map<unknown>>; tags: [string, number][]; onDelete: () => void };
+type Props = { id: string; index: Y.Map<Y.Map<unknown>>; tags: [string, number][]; tree: Tree; folderId: string | null; onDelete: () => void };
 
 /** The note's tags as removable chips, and an input that autocompletes existing tags or creates one on Enter. */
-function TagBar({ id, index, tags }: Omit<Props, "onDelete">) {
+function TagBar({ id, index, tags, tree, folderId }: Omit<Props, "onDelete">) {
   const [draft, setDraft] = useState("");
   const meta = index.get(id);
   const mine = meta ? namesOf(meta, tagMap(index)) : [];
   const add = (name: string) => addTag(index, id, name) && setDraft("");
   return (
     <div class="tagbar">
+      <FolderChip index={index} tree={tree} noteId={id} folderId={folderId} />
       {mine.map((t) => (
         <span key={t} class="chip">
           {t}
@@ -69,7 +72,7 @@ function TagBar({ id, index, tags }: Omit<Props, "onDelete">) {
   );
 }
 
-export function NoteEditor({ id, index, tags, onDelete }: Props) {
+export function NoteEditor({ id, index, tags, tree, folderId, onDelete }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   // Re-render the toolbar on every transaction so active states follow the selection.
@@ -124,7 +127,7 @@ export function NoteEditor({ id, index, tags, onDelete }: Props) {
         </button>
         <button class="danger" onClick={onDelete}>Delete</button>
       </div>
-      <TagBar id={id} index={index} tags={tags} />
+      <TagBar id={id} index={index} tags={tags} tree={tree} folderId={folderId} />
       <div ref={el} class="content" />
     </div>
   );

@@ -183,7 +183,7 @@ test("100k-word note opens and types without lag", async ({ browser }) => {
 });
 
 const tagInput = (p: Page) => p.getByLabel("Add tag", { exact: true });
-const noteTags = (p: Page) => p.locator(".tagbar .chip").allTextContents();
+const noteTags = (p: Page) => p.locator(".tagbar span.chip").allTextContents();
 const sideTag = (p: Page, name: string) => p.locator("nav.tags .chip", { hasText: `#${name}` });
 const listed = (p: Page) => p.locator("aside li button").evaluateAll((els) => els.map((e) => e.firstChild!.textContent).sort());
 
@@ -252,7 +252,7 @@ test("tags: two devices tagging the same note offline both keep their tag", asyn
   for (const p of [a, b]) await expect.poll(() => noteTags(p), { timeout: 15_000 }).toEqual(["from-a×", "from-b×"]);
 });
 
-const navItem = (p: Page, name: string) => p.locator("nav.folders .nav-item", { hasText: name });
+const navItem = (p: Page, name: string) => p.locator("nav.folders .nav-item").filter({ has: p.locator(".name").getByText(name, { exact: true }) });
 const crumbs = (p: Page) => p.locator(".crumbs").innerText();
 const header = (p: Page) => p.locator(".list-header");
 
@@ -316,4 +316,69 @@ test("folders: create, nest, breadcrumb, rename, delete, and sync to another dev
   await expect(navItem(b, "Job")).toHaveCount(0, { timeout: 15_000 });
   await expect(navItem(b, "Projects")).toBeVisible();
   await expect.poll(() => crumbs(b)).toBe("All notes"); // b had Job open
+});
+
+const noteRow = (p: Page, title: string) => p.locator("aside li button", { hasText: title });
+const roots = (p: Page) => p.locator("nav.folders .nav-item .name").allTextContents();
+
+test("move: drag & drop notes and folders, Move to… sheet, multi-select, and sync", async ({ browser }) => {
+  const secret = newSecret();
+  const p = await device(browser, secret);
+  for (const t of ["One", "Two", "Three"]) {
+    await newNote(p);
+    await p.keyboard.type(t);
+  }
+  for (const f of ["A", "B", "C"]) await newFolder(p, f);
+  await navItem(p, "All notes").click();
+  await expect.poll(() => roots(p)).toEqual(["All notes", "Unfiled", "A", "B", "C"]);
+
+  // Drag a note onto a folder; drag a folder onto another's top edge (reorder) or middle (nest).
+  await noteRow(p, "One").dragTo(navItem(p, "B"));
+  await expect(navItem(p, "B")).toContainText("1");
+  await navItem(p, "C").dragTo(navItem(p, "A"), { targetPosition: { x: 20, y: 2 } });
+  await expect.poll(() => roots(p)).toEqual(["All notes", "Unfiled", "C", "A", "B"]);
+  await navItem(p, "B").dragTo(navItem(p, "A"));
+  await expect.poll(() => roots(p)).toEqual(["All notes", "Unfiled", "C", "A"]);
+  await expect(navItem(p, "A")).toContainText("1"); // B's note counts toward A
+
+  // A folder can't go into its own subfolder: the drop is refused and the sheet disables it.
+  await navItem(p, "A").click();
+  await navItem(p, "A").dragTo(p.locator("button.folder-row", { hasText: "B" }));
+  await expect(p.locator("button.folder-row", { hasText: "B" })).toBeVisible();
+  await header(p).getByRole("button", { name: "Move" }).click();
+  const sheet = p.getByRole("dialog");
+  await expect(sheet.getByRole("button", { name: "B", exact: true })).toBeDisabled();
+  await expect(sheet.getByRole("button", { name: "A", exact: true })).toBeDisabled();
+  await sheet.getByRole("button", { name: "C", exact: true }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect.poll(() => crumbs(p)).toBe("C / A");
+
+  // Editor chip opens the Move sheet; "New folder" there creates one and moves the note into it.
+  await navItem(p, "All notes").click();
+  await noteRow(p, "Two").click();
+  await expect(p.locator(".folder-chip")).toContainText("Unfiled");
+  await p.locator(".folder-chip").click();
+  await p.getByRole("dialog").getByRole("button", { name: "+ New folder" }).click();
+  await expect(p.getByRole("dialog").getByLabel("New folder name")).toBeFocused();
+  await p.keyboard.type("D");
+  await p.keyboard.press("Enter");
+  await expect(p.locator(".folder-chip")).toContainText("D");
+
+  // Multi-select: move several notes at once.
+  await header(p).getByRole("button", { name: "Select" }).click();
+  await noteRow(p, "Two").click();
+  await noteRow(p, "Three").click();
+  await expect(header(p)).toContainText("2 selected");
+  await header(p).getByRole("button", { name: "Move to…" }).click();
+  await p.getByRole("dialog").getByRole("button", { name: "C", exact: true }).click();
+  await expect(navItem(p, "C")).toContainText("3");
+  await expect(navItem(p, "Unfiled")).toContainText("0");
+
+  // Everything synced.
+  const b = await device(browser, secret);
+  await expect.poll(() => roots(b), { timeout: 15_000 }).toEqual(["All notes", "Unfiled", "C", "D"]);
+  await navItem(b, "C").click();
+  await expect(b.locator("button.folder-row", { hasText: "A" })).toContainText("1 note");
+  await expect(noteRow(b, "Two")).toBeVisible();
+  await expect(noteRow(b, "Three")).toBeVisible();
 });
