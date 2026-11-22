@@ -191,9 +191,13 @@ test("endpoint blocks local targets and honours the origin allow-list", async ()
   assert.equal(res.status, 400);
   assert.equal(res.headers.get("access-control-allow-origin"), "https://notes.example");
   assert.equal(res.headers.get("cache-control"), "no-store");
-  for (const u of ["http://localhost/", "http://127.0.0.1/", "http://[::1]/", "http://169.254.169.254/"]) assert.equal((await call(u)).status, 400, u);
+  for (const u of ["http://localhost/", "http://127.0.0.1/", "http://[::1]/", "http://169.254.169.254/"]) assert.equal((await call(u, "https://notes.example")).status, 400, u);
   assert.equal(localHits, 0, "the relay never reached the local server");
   assert.equal((await call("https://example.com/", "https://evil.example")).status, 403);
+  // With an allow-list, a request without Origin must at least look same-origin (as browsers send it).
+  const bare = `${base}/v1/unfurl?url=${encodeURIComponent("http://127.0.0.1/")}`;
+  assert.equal((await fetch(bare)).status, 403);
+  assert.equal((await fetch(bare, { headers: { "sec-fetch-site": "same-origin" } })).status, 400);
 });
 
 test("endpoint is off unless enabled, even next to the app's SPA fallback", async () => {

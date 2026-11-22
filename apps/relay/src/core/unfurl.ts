@@ -317,10 +317,22 @@ export async function unfurl(target: string, fetcher: Fetcher, timeoutMs = UNFUR
  * `GET /v1/unfurl?url=<link>`. CORS follows the relay's origin allow-list.
  * Never logs: the link is the one thing this endpoint must not keep.
  */
-export async function handleUnfurl(reqUrl: URL, origin: string | null, allowedOrigins: string[], fetcher: Fetcher, cancel?: AbortSignal): Promise<Response> {
+export async function handleUnfurl(
+  reqUrl: URL,
+  header: (name: string) => string | null,
+  allowedOrigins: string[],
+  fetcher: Fetcher,
+  cancel?: AbortSignal,
+): Promise<Response> {
   const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
+  const origin = header("origin");
+  if (allowedOrigins.length > 0) {
+    // Same-origin GETs carry no Origin, but browsers mark them with Sec-Fetch-Site. Like the socket
+    // check, this filters browsers; it isn't authentication (any client can set both headers).
+    const ok = origin ? allowedOrigins.includes(origin) : header("sec-fetch-site") === "same-origin";
+    if (!ok) return new Response('{"error":"forbidden origin"}', { status: 403, headers });
+  }
   if (origin) {
-    if (allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) return new Response('{"error":"forbidden origin"}', { status: 403, headers });
     headers["access-control-allow-origin"] = allowedOrigins.length > 0 ? origin : "*";
     if (allowedOrigins.length > 0) headers.vary = "origin";
   }

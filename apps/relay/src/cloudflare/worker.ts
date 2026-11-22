@@ -31,7 +31,7 @@ export default {
     const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     const origin = req.headers.get("origin");
     if (url.pathname === "/v1/unfurl" && String(env.UNFURL_ENABLED) === "true" && req.method === "GET") {
-      return handleUnfurl(url, origin, allowed, workerFetcher);
+      return handleUnfurl(url, (h) => req.headers.get(h), allowed, workerFetcher);
     }
     const match = ROOM_PATH.exec(url.pathname);
     if (!match || !ID_PATTERN.test(match[1]!)) return new Response("notes-hq relay", { status: 404 });

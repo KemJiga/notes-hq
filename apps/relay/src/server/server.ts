@@ -68,7 +68,11 @@ export function startRelay(config: Config): Promise<RunningRelay> {
       const gone = new AbortController();
       res.on("close", () => gone.abort()); // the client left: stop fetching for it
       // handleUnfurl never rejects; it turns every failure into a JSON error response.
-      void handleUnfurl(url, req.headers.origin ?? null, config.allowedOrigins, nodeFetcher, gone.signal)
+      const header = (h: string) => {
+        const v = req.headers[h];
+        return typeof v === "string" ? v : null;
+      };
+      void handleUnfurl(url, header, config.allowedOrigins, nodeFetcher, gone.signal)
         .then(async (r) => void res.writeHead(r.status, Object.fromEntries(r.headers)).end(await r.text()))
         .finally(() => unfurling--);
       return;

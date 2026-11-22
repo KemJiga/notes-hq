@@ -147,7 +147,7 @@ Safety limits:
 - No private, loopback, link-local or other non-public addresses (SSRF protection). The self-hosted server checks every address a name resolves to and connects only to those, and it re-checks each redirect (5 at most). On Cloudflare, Workers can't reach private networks at all.
 - 5 seconds per preview, and at most 1 MB per response. Pages are read up to 1 MB. Thumbnails over 1 MB, or that aren't PNG, JPEG, GIF, WebP or AVIF, are dropped. The self-hosted server runs at most 8 previews at once and answers `503` beyond that, so previews can't starve sync.
 
-Anyone who can reach the relay can use the endpoint to fetch public pages through it. `ALLOWED_ORIGINS` limits which web apps may call it from a browser, but it's not authentication. Leave previews off if that matters for your setup.
+Anyone who can reach the relay can use the endpoint to fetch public pages through it. `ALLOWED_ORIGINS` limits which web apps may call it from a browser (requests with no `Origin` must be marked same-origin by the browser), but it's not authentication: any non-browser client can set those headers. Leave previews off if that matters for your setup.
 
 ---
 
