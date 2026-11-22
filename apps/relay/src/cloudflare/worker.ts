@@ -8,25 +8,34 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import { DEFAULT_MAX_DATA_BYTES, ID_PATTERN, type ServerMsg } from "@notes-hq/protocol";
-import { handleFrame, migrate, RoomStore, type Peer, type Sql } from "../core/index.js";
+import { handleFrame, handleUnfurl, migrate, RoomStore, type Fetcher, type Peer, type Sql } from "../core/index.js";
 
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   ALLOWED_ORIGINS?: string;
   MAX_DATA_BYTES?: string;
+  UNFURL_ENABLED?: string | boolean; // wrangler passes a TOML boolean through as a boolean
 }
 
 const ROOM_PATH = /^\/v1\/rooms\/([A-Za-z0-9_-]+)$/;
+
+// Workers can't resolve DNS or reach private networks, so the core's URL checks
+// plus Cloudflare's own network isolation are the SSRF guard here.
+const workerFetcher: Fetcher = (url, signal) =>
+  fetch(url, { signal, redirect: "manual", headers: { "user-agent": "notes-hq-unfurl/1 (link preview)" } });
 
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
     if (url.pathname === "/healthz") return new Response("ok");
+    const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const origin = req.headers.get("origin");
+    if (url.pathname === "/v1/unfurl" && String(env.UNFURL_ENABLED) === "true" && req.method === "GET") {
+      return handleUnfurl(url, origin, allowed, workerFetcher);
+    }
     const match = ROOM_PATH.exec(url.pathname);
     if (!match || !ID_PATTERN.test(match[1]!)) return new Response("notes-hq relay", { status: 404 });
     if (req.headers.get("upgrade") !== "websocket") return new Response("expected websocket", { status: 426 });
-    const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    const origin = req.headers.get("origin");
     if (allowed.length > 0 && (!origin || !allowed.includes(origin))) return new Response("forbidden", { status: 403 });
     const stub = env.ROOMS.get(env.ROOMS.idFromName(match[1]!));
     return stub.fetch(req);

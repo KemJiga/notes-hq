@@ -24,7 +24,7 @@ Guiding requirements:
 ### Non-goals (for now)
 
 - User accounts, multi-user sharing, and per-note permissions.
-- Server-side features that need to read content, such as server search or previews. The server is blind by design.
+- Server-side features that need to read content, such as server search. The server is blind by design. (Link previews only need the link, so they run as an optional, stateless relay endpoint; see D15.)
 - Native apps. They may come later as thin wrappers (see §4, D7).
 
 ---
@@ -194,6 +194,14 @@ Browsers only provide WebCrypto (`crypto.subtle`) and service workers in a **sec
 Names are checked for clashes only where the user types one. Merges, moves and deletes can still leave two same-name folders side by side, and both show. Deleting a folder moves its notes and subfolders to its parent. Sibling order is a number: a drop between two folders takes the midpoint (the siblings are renumbered when there's no room left), and ties break by id.
 **UI:** the sidebar lists All notes, Unfiled and the top-level folders only (the Folders section collapses, remembered per device). Deeper folders open from the note list, whose header shows a breadcrumb and the folder's actions (RAW-99). Notes and folders move by drag & drop on desktop (a folder's top or bottom edge reorders, its middle nests), or with a "Move to…" sheet that also works by touch and keyboard: from the editor's folder chip, a folder's Move action, or Select mode for several notes at once.
 
+### D15. Link previews through an optional, stateless relay endpoint
+
+**Chosen:** `GET /v1/unfurl?url=<link>` in the relay core (`apps/relay/src/core/unfurl.ts`), served by both runtimes, **off unless `UNFURL_ENABLED=true`**. It fetches the page, reads Open Graph, Twitter card and plain HTML metadata (falling back to oEmbed when the title or image is missing), and returns `{ url, title, description, siteName, image }`. The thumbnail comes back as a `data:` URL. The app stores the card in the note's encrypted doc, so it's fetched once, renders offline, and never loads anything from the third-party site.
+**Why:** browsers can't read other sites' metadata (CORS), so something outside the browser has to fetch it. The relay host is already there and already trusted with the user's IP and timing. The endpoint sees only the link, never note content or the room, and it keeps nothing (no logs, no cache), so the relay stays blind to notes.
+**Safety:** http/https only, default ports only, no credentials in URLs, and no private, loopback, link-local or other non-public addresses. The self-hosted server resolves each name, rejects it if any address is non-public, and connects only to the addresses it checked, which closes the DNS-rebinding gap. Redirects are followed by hand (5 at most) and each hop is re-checked. Each preview gets 5 seconds in total and at most 1 MB per response. Pages are read up to 1 MB and only their `<head>` is parsed, with a linear-time tag scan so hostile markup can't stall the relay; bigger images are dropped. At most 8 previews run at once on the self-hosted server. On Cloudflare, Workers can't resolve DNS or reach private networks, so the URL checks plus Cloudflare's isolation do the same job. Each runtime passes a one-request `Fetcher`; redirects, limits and parsing are shared in the core.
+**Trade-offs:** whoever can reach the relay can fetch public pages through it (`ALLOWED_ORIGINS` limits browsers, not curl), and a reverse proxy in front may log the query string. Both are documented in [SELF_HOSTING.md](./SELF_HOSTING.md#link-previews-optional). The fetching code parses HTML with regular expressions, which is enough for `<meta>` and `<link>` tags and adds no dependency.
+**Considered:** fetching from the device (blocked by CORS), a separate helper service (one more thing to host for a nice-to-have), and hotlinking thumbnails (a third-party request every time a note opens, and broken offline).
+
 ---
 
 ## 5. Security model
@@ -202,6 +210,7 @@ Names are checked for clashes only where the user types one. Merges, moves and d
 |---|---|---|
 | Your devices (have the link) | read and write everything | n/a |
 | Relay operator | see room ids, opaque doc ids, update sizes and timing, IP addresses | read note content or titles, forge updates that devices accept |
+| Link-preview endpoint (if enabled) | see each previewed link and the device IP that asked | see which note or room a link belongs to |
 | Network observer (with TLS) | see that you talk to the relay | anything else |
 | Stranger who knows only the relay URL | open sockets to random rooms | find your room (128-bit id) or decrypt anything |
 | Anyone who gets the join link | **everything your devices can do** | n/a |

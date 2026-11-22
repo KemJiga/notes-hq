@@ -92,6 +92,22 @@ export interface ErrMsg {
 
 export type ServerMsg = SnapMsg | UpdMsg | SyncedMsg | AckMsg | ErrMsg;
 
+// ---------- link previews (optional HTTP endpoint) ----------
+
+/**
+ * Body of `GET /v1/unfurl?url=<link>` on relays that enable it. The relay only
+ * sees the link, never note content. `image` is a `data:` URL so the app stores
+ * it in the note and never loads it from the third-party site.
+ */
+export interface UnfurlPreview {
+  /** Final URL after redirects. */
+  url: string;
+  title?: string;
+  description?: string;
+  siteName?: string;
+  image?: string;
+}
+
 // ---------- validation ----------
 
 function isId(v: unknown): v is string {

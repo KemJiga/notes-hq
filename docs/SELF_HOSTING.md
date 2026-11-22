@@ -15,6 +15,7 @@ Contents:
 - [Option C: LAN-only home server](#option-c-lan-only-home-server)
 - [Option D: app and relay hosted separately](#option-d-app-and-relay-hosted-separately)
 - [Option E: Cloudflare Workers (optional)](#option-e-cloudflare-workers-optional)
+- [Link previews (optional)](#link-previews-optional)
 - [Configuration reference](#configuration-reference)
 - [Getting HTTPS](#getting-https)
 - [Backups, upgrades, and moving](#backups-upgrades-and-moving)
@@ -124,9 +125,29 @@ bunx wrangler login
 bunx wrangler deploy          # uses wrangler.toml
 ```
 
-Set `ALLOWED_ORIGINS` under `[vars]` in `wrangler.toml`. Free-plan limits apply. If a daily limit is reached, devices keep working offline and sync again after the reset.
+Set `ALLOWED_ORIGINS` (and `UNFURL_ENABLED`, see [Link previews](#link-previews-optional)) under `[vars]` in `wrangler.toml`. Free-plan limits apply. If a daily limit is reached, devices keep working offline and sync again after the reset.
 
 Want to add another runtime, such as Deno or another edge platform? Implement the `Sql` function and `Peer` interface from `apps/relay/src/core`, following the two existing adapters.
+
+---
+
+## Link previews (optional)
+
+Pasted links can show as preview cards (title, site, description, thumbnail). Browsers can't read other sites' metadata, so the app asks the relay to fetch it: `GET /v1/unfurl?url=<link>`. It's **off by default**. Turn it on with `UNFURL_ENABLED=true` (or `UNFURL_ENABLED = "true"` in `wrangler.toml`). When it's off or can't be reached, the app keeps the link as a plain link.
+
+What the endpoint sees and keeps:
+
+- It sees **only the link being previewed**, never note content, and it isn't tied to a sync room. The finished card, thumbnail included, is stored inside the encrypted note, so each link is fetched once.
+- It never logs or stores links. **Your reverse proxy might, though:** most access logs record query strings. Turn them off for `/v1/unfurl` (nginx: a `location /v1/unfurl { access_log off; ... }` block; Caddy: leave `log` out or use `log_skip`). On Cloudflare, keep Workers Logs off or accept that request URLs show up there.
+- The sites being previewed see your relay's IP address, not your devices'.
+
+Safety limits:
+
+- Only `http` and `https` links on the default port, without credentials in the URL.
+- No private, loopback, link-local or other non-public addresses (SSRF protection). The self-hosted server checks every address a name resolves to and connects only to those, and it re-checks each redirect (5 at most). On Cloudflare, Workers can't reach private networks at all.
+- 5 seconds per preview, and at most 1 MB per response. Pages are read up to 1 MB. Thumbnails over 1 MB, or that aren't PNG, JPEG, GIF, WebP or AVIF, are dropped. The self-hosted server runs at most 8 previews at once and answers `503` beyond that, so previews can't starve sync.
+
+Anyone who can reach the relay can use the endpoint to fetch public pages through it. `ALLOWED_ORIGINS` limits which web apps may call it from a browser, but it's not authentication. Leave previews off if that matters for your setup.
 
 ---
 
@@ -143,6 +164,7 @@ Relay (self-hosted server), set as environment variables:
 | `ALLOWED_ORIGINS` | *(any)* | Comma-separated origins allowed to open sync sockets. |
 | `MAX_DATA_BYTES` | `1048576` | Max size of one encrypted update or snapshot. Raise it if you keep very large notes. |
 | `MAX_SUBS_PER_PEER` | `10000` | Max docs one connection may subscribe to. |
+| `UNFURL_ENABLED` | `false` | `true` serves link previews at `/v1/unfurl` (see [Link previews](#link-previews-optional)). |
 
 App, set at build time:
 
@@ -150,7 +172,7 @@ App, set at build time:
 |---|---|---|
 | `VITE_RELAY_URL` | same origin as the app | Relay pre-filled in the "Start a new sync session" form. |
 
-Endpoints: `GET /healthz` (health check) and `GET /v1/rooms/<roomId>` (WebSocket upgrade).
+Endpoints: `GET /healthz` (health check), `GET /v1/rooms/<roomId>` (WebSocket upgrade) and, when enabled, `GET /v1/unfurl?url=<link>` (link previews).
 
 ## Getting HTTPS
 

@@ -16,3 +16,5 @@ new_sqlite_classes = ["Room"]
 # Comma-separated list of origins allowed to connect, e.g. "https://notes.example.com".
 # Empty = allow any origin.
 ALLOWED_ORIGINS = ""
+# "true" serves GET /v1/unfurl (link previews). It only sees the links being previewed.
+UNFURL_ENABLED = "false"
