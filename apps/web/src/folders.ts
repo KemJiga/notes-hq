@@ -75,6 +75,13 @@ export function isWithin(tree: Tree, id: string | null, ancestor: string): boole
   return false;
 }
 
+/** The folder and its ancestors, top level first. */
+export function pathTo(tree: Tree, id: string): Folder[] {
+  const path: Folder[] = [];
+  for (let f = tree.folders.get(id); f; f = f.parentId === null ? undefined : tree.folders.get(f.parentId)) path.unshift(f);
+  return path;
+}
+
 /** Another folder next to it already uses this name (case-insensitive). */
 export function nameTaken(tree: Tree, parentId: string | null, name: string, except?: string): boolean {
   const n = name.trim().toLowerCase();
@@ -153,7 +160,10 @@ export function deleteFolder(notes: Notes, id: string): void {
       map.get(c)!.set("parentId", f.parentId);
       map.get(c)!.set("order", next++);
     }
-    map.forEach((m) => m.get("parentId") === id && m.set("parentId", f.parentId)); // any that a cycle repair shows elsewhere
+    // If f is in a loop buildTree breaks, the break is at the top of f's path, which still stores its
+    // link into the loop. Store the break, or the children just moved into the loop would close a new one.
+    const top = pathTo(tree, id)[0]!;
+    if (top.id !== id && map.get(top.id)!.get("parentId") != null) map.get(top.id)!.set("parentId", null);
     notes.forEach((m) => m.get("folderId") === id && m.set("folderId", f.parentId));
     map.delete(id);
   });

@@ -251,3 +251,69 @@ test("tags: two devices tagging the same note offline both keep their tag", asyn
   });
   for (const p of [a, b]) await expect.poll(() => noteTags(p), { timeout: 15_000 }).toEqual(["from-a×", "from-b×"]);
 });
+
+const navItem = (p: Page, name: string) => p.locator("nav.folders .nav-item", { hasText: name });
+const crumbs = (p: Page) => p.locator(".crumbs").innerText();
+const header = (p: Page) => p.locator(".list-header");
+
+async function newFolder(p: Page, name: string, where: "sidebar" | "here" = "sidebar") {
+  await (where === "sidebar" ? p.getByRole("button", { name: "New folder", exact: true }).first() : header(p).getByRole("button", { name: "New folder" })).click();
+  await expect(p.locator(".name-input input")).toBeFocused();
+  await p.keyboard.type(name);
+  await p.keyboard.press("Enter");
+}
+
+test("folders: create, nest, breadcrumb, rename, delete, and sync to another device", async ({ browser }) => {
+  const secret = newSecret();
+  const p = await device(browser, secret);
+  await newNote(p);
+  await p.keyboard.type("Loose");
+  await expect(navItem(p, "Unfiled")).toContainText("1");
+
+  await newFolder(p, "Work");
+  await expect(navItem(p, "Work")).toHaveAttribute("aria-current", "page");
+  await newNote(p);
+  await p.keyboard.type("In work");
+  await newFolder(p, "Projects", "here");
+  await p.locator("button.folder-row", { hasText: "Projects" }).click();
+  await expect.poll(() => crumbs(p)).toBe("Work / Projects");
+  await expect(navItem(p, "Work")).toHaveAttribute("aria-current", "page"); // the sidebar shows the top-level folder
+  await newNote(p);
+  await p.keyboard.type("Deep");
+
+  // A clashing name is flagged and can't be saved; Esc cancels.
+  await newFolder(p, "Other");
+  await p.getByRole("button", { name: "New folder", exact: true }).first().click();
+  await expect(p.getByLabel("New folder name")).toBeFocused();
+  await p.keyboard.type("work");
+  await expect(p.getByLabel("New folder name")).toHaveAttribute("aria-invalid", "true");
+  await p.keyboard.press("Enter");
+  await expect(p.locator("nav.folders .nav-item")).toHaveCount(4); // All notes, Unfiled, Work, Other: nothing added
+  await p.keyboard.press("Escape");
+  await expect(p.getByLabel("New folder name")).toHaveCount(0);
+
+  await navItem(p, "Work").click();
+  await header(p).getByRole("button", { name: "Rename" }).click();
+  await expect(p.getByLabel("Folder name")).toBeFocused();
+  await p.keyboard.type("Job");
+  await p.keyboard.press("Enter");
+  await expect.poll(() => crumbs(p)).toBe("Job");
+
+  // The other device sees the tree.
+  const b = await device(browser, secret);
+  await navItem(b, "Job").click();
+  await expect(b.locator("button.folder-row", { hasText: "Projects" })).toContainText("1 note");
+  await expect(b.locator("aside li button", { hasText: "In work" })).toBeVisible();
+
+  // Deleting Job moves its note and subfolder to the top level / Unfiled.
+  p.once("dialog", (d) => {
+    expect(d.message()).toContain("Its 1 note moves to Unfiled and its 1 subfolder moves to the top level, so nothing is lost.");
+    void d.accept();
+  });
+  await header(p).getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => crumbs(p)).toBe("Unfiled");
+  await expect(navItem(p, "Unfiled")).toContainText("2");
+  await expect(navItem(b, "Job")).toHaveCount(0, { timeout: 15_000 });
+  await expect(navItem(b, "Projects")).toBeVisible();
+  await expect.poll(() => crumbs(b)).toBe("All notes"); // b had Job open
+});

@@ -1,9 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
 import type * as Y from "yjs";
+import { buildTree, pathTo, type Tree } from "../folders";
 import { createNote, deleteNote, listNotes, openIndex, type NoteMeta } from "../notes";
 import { engine, type SyncStatus } from "../sync/engine";
 import type { Session } from "../sync/session";
-import { addTag, countTags, deleteTag, renameTag, tagMap, withTags } from "../tags";
+import { addTag, countTags, deleteTag, renameTag, withTags } from "../tags";
+import { ALL, FolderNav, ListHeader, SubfolderRows, UNFILED, type View } from "./Folders";
 import { NoteEditor } from "./NoteEditor";
 import { SyncPanel } from "./SyncPanel";
 
@@ -15,34 +17,44 @@ export function App({ initialSession }: { initialSession: Session | null }) {
   const [session, setSession] = useState(initialSession);
   const [panelOpen, setPanelOpen] = useState(false);
   const [active, setActive] = useState<string[]>([]);
+  const [tree, setTree] = useState<Tree>({ folders: new Map(), roots: [] });
+  const [view, setView] = useState<View>(ALL);
 
   useEffect(() => engine.onStatus(setStatus), []);
 
   useEffect(() => {
     let idx: Y.Map<Y.Map<unknown>>;
-    const refresh = () => setNotes(listNotes(idx));
+    const refresh = () => {
+      setNotes(listNotes(idx));
+      setTree(buildTree(idx));
+    };
     void openIndex().then((m) => {
       idx = m;
       setIndex(m);
       refresh();
-      m.observeDeep(refresh);
-      tagMap(m).observe(refresh);
+      // Once per transaction, whether it touched notes, tags, folders or several of them.
+      m.doc!.on("afterTransaction", refresh);
     });
-    return () => {
-      idx?.unobserveDeep(refresh);
-      if (idx) tagMap(idx).unobserve(refresh);
-    };
+    return () => idx?.doc!.off("afterTransaction", refresh);
   }, []);
 
   const tags = index ? countTags(index, notes) : [];
   // Drop filters whose tag was renamed or deleted (here or on another device).
   const filter = active.filter((t) => tags.some(([name]) => name === t));
-  const shown = withTags(notes, filter);
+  // A folder deleted on another device drops the view back to All notes.
+  const here = view === ALL || view === UNFILED || tree.folders.has(view) ? view : ALL;
+  const folderId = here === ALL || here === UNFILED ? null : here;
+  const inView = here === ALL ? notes : notes.filter((n) => n.folderId === folderId);
+  const shown = withTags(inView, filter);
+  // Notes per folder, subfolders included (null = Unfiled).
+  const counts = new Map<string | null, number>();
+  const inc = (k: string | null) => counts.set(k, (counts.get(k) ?? 0) + 1);
+  for (const n of notes) n.folderId === null ? inc(null) : pathTo(tree, n.folderId).forEach((f) => inc(f.id));
   const toggle = (t: string) => setActive(filter.includes(t) ? filter.filter((x) => x !== t) : [...filter, t]);
 
   const add = () => {
     if (!index) return;
-    const id = createNote(index);
+    const id = createNote(index, folderId);
     filter.forEach((t) => addTag(index, id, t)); // so the new note shows in the filtered list
     setSelected(id);
   };
@@ -69,6 +81,7 @@ export function App({ initialSession }: { initialSession: Session | null }) {
             {status === "local-only" ? "Local only" : status}
           </button>
         </div>
+        {index && <FolderNav index={index} tree={tree} counts={counts} total={notes.length} here={here} onOpen={setView} />}
         {tags.length > 0 && (
           <nav class="tags" aria-label="Tags">
             {tags.map(([name, count]) => (
@@ -91,7 +104,9 @@ export function App({ initialSession }: { initialSession: Session | null }) {
             <button onClick={() => setActive([])} aria-label="Clear tag filter">×</button>
           </div>
         )}
+        {index && <ListHeader index={index} tree={tree} counts={counts} here={here} shown={shown.length} onOpen={setView} />}
         <ul>
+          <SubfolderRows tree={tree} counts={counts} here={here} onOpen={setView} />
           {shown.map((n) => (
             <li key={n.id}>
               <button class={n.id === selected ? "active" : ""} onClick={() => setSelected(n.id)}>

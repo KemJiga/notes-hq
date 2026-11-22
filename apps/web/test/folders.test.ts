@@ -171,6 +171,30 @@ test("every parent layout of 5 folders repairs to the same full tree, whatever t
   }
 });
 
+test("deleting a folder from a repaired cycle stores no new cycle", () => {
+  for (const len of [2, 3]) {
+    for (let del = 0; del < len; del++) {
+      const notes = notesOf(new Y.Doc());
+      const ids = Array.from({ length: len }, (_, i) => `c${i}`);
+      ids.forEach((id) => folderMap(notes).set(id, new Y.Map<unknown>([["name", id]])));
+      ids.forEach((id, i) => setParent(notes, id, ids[(i + 1) % len]!)); // c0 -> c1 -> ... -> c0
+      const before = shape(buildTree(notes));
+      deleteFolder(notes, ids[del]!);
+      // The stored parent links (not the read-time repair) must already form a tree.
+      const stored = new Map<string, string | null>();
+      folderMap(notes).forEach((m, id) => stored.set(id, m.get("parentId") as string | null));
+      for (const start of stored.keys()) {
+        const seen = new Set<string>();
+        for (let cur: string | null = start; cur !== null; cur = stored.get(cur) ?? null) {
+          assert.ok(!seen.has(cur), `loop after deleting ${ids[del]} from ${before}`);
+          seen.add(cur);
+        }
+      }
+      assert.equal(reachable(buildTree(notes)), len - 1);
+    }
+  }
+});
+
 test("offline: folder deleted on one device while things move into it on the other", () => {
   let f = "", g = "", parent = "";
   const { a, b, sync } = twoDevices((n) => {
