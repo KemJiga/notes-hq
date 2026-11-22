@@ -2,6 +2,7 @@ import type { ChainedCommands, Editor } from "@tiptap/core";
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type * as Y from "yjs";
 import { openNoteContent, touchNote } from "../notes";
+import { addTag, namesOf, removeTag, tagMap } from "../tags";
 
 const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
@@ -24,7 +25,51 @@ const TOOLS: Tool[] = [
   ["―", `Divider ("---")`, null, (c) => c.setHorizontalRule()],
 ];
 
-export function NoteEditor({ id, index, onDelete }: { id: string; index: Y.Map<Y.Map<unknown>>; onDelete: () => void }) {
+type Props = { id: string; index: Y.Map<Y.Map<unknown>>; tags: [string, number][]; onDelete: () => void };
+
+/** The note's tags as removable chips, and an input that autocompletes existing tags or creates one on Enter. */
+function TagBar({ id, index, tags }: Omit<Props, "onDelete">) {
+  const [draft, setDraft] = useState("");
+  const meta = index.get(id);
+  const mine = meta ? namesOf(meta, tagMap(index)) : [];
+  const add = (name: string) => addTag(index, id, name) && setDraft("");
+  return (
+    <div class="tagbar">
+      {mine.map((t) => (
+        <span key={t} class="chip">
+          {t}
+          <button aria-label={`Remove tag ${t}`} onClick={() => removeTag(index, id, t)}>×</button>
+        </span>
+      ))}
+      <input
+        list="tag-suggestions"
+        placeholder="+ Add tag"
+        aria-label="Add tag"
+        enterKeyHint="done"
+        autocapitalize="none"
+        value={draft}
+        onInput={(e) => {
+          const v = e.currentTarget.value;
+          // Picking a suggestion replaces the text in one go: add it right away.
+          if ((e as InputEvent).inputType === "insertReplacementText" || (!(e as InputEvent).inputType && tags.some(([t]) => t === v))) add(v);
+          else setDraft(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          add(draft);
+        }}
+      />
+      <datalist id="tag-suggestions">
+        {tags.filter(([t]) => !mine.includes(t)).map(([t, n]) => (
+          <option key={t} value={t} label={`${n} note${n === 1 ? "" : "s"}`} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
+export function NoteEditor({ id, index, tags, onDelete }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
   // Re-render the toolbar on every transaction so active states follow the selection.
@@ -79,6 +124,7 @@ export function NoteEditor({ id, index, onDelete }: { id: string; index: Y.Map<Y
         </button>
         <button class="danger" onClick={onDelete}>Delete</button>
       </div>
+      <TagBar id={id} index={index} tags={tags} />
       <div ref={el} class="content" />
     </div>
   );
