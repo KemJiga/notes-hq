@@ -34,7 +34,7 @@ function v4(ip: string): number[] | null {
   return parts.map(Number);
 }
 
-function publicV4([a, b]: number[]): boolean {
+function publicV4([a, b, c]: number[]): boolean {
   return !(
     a === 0 ||
     a === 10 ||
@@ -44,7 +44,7 @@ function publicV4([a, b]: number[]): boolean {
     (a === 169 && b === 254) || // link-local, cloud metadata
     (a === 172 && b! >= 16 && b! <= 31) ||
     (a === 192 && b === 168) ||
-    (a === 192 && b === 0) || // 192.0.0.0/24 protocol assignments (and 192.0.2.0/24 docs)
+    (a === 192 && b === 0 && (c === 0 || c === 2)) || // 192.0.0.0/24 protocol assignments, 192.0.2.0/24 docs; the rest of 192.0/16 is public
     (a === 198 && (b === 18 || b === 19)) // benchmarking
   );
 }
@@ -79,7 +79,7 @@ export function isPublicIp(ip: string): boolean {
   if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) return publicV4(embedded); // ::ffff:a.b.c.d
   if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return publicV4(embedded); // NAT64
   if (g.slice(0, 7).every((x) => x === 0)) return false; // :: and ::1 (and deprecated ::a.b.c.d)
-  if (g[0] === 0x2002) return publicV4([g[1]! >> 8, g[1]! & 255]); // 6to4 wraps an IPv4
+  if (g[0] === 0x2002) return publicV4([g[1]! >> 8, g[1]! & 255, g[2]! >> 8, g[2]! & 255]); // 6to4 wraps an IPv4
   if ((g[0]! & 0xe000) !== 0x2000) return false; // only 2000::/3 is global unicast (drops fc00::/7, fe80::/10, ff00::/8)
   return !(g[0] === 0x2001 && (g[1]! < 0x200 || g[1] === 0xdb8)); // Teredo, benchmarking, ORCHID, documentation
 }
