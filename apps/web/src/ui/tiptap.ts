@@ -24,6 +24,9 @@ import Paragraph from "@tiptap/extension-paragraph";
 import Strike from "@tiptap/extension-strike";
 import Text from "@tiptap/extension-text";
 import type * as Y from "yjs";
+import { LinkCard } from "./linkcard";
+
+export { linkLine, showAsPreview } from "./linkcard";
 
 /** Mod-K: remove the link under the caret, or ask for a URL and link the selection (or insert it as text). */
 const LinkShortcut = Extension.create({
@@ -60,12 +63,16 @@ export function createEditor(
       BulletList, OrderedList, ListItem, TaskList, TaskItem.configure({ nested: true }),
       Link.configure({ openOnClick: false }),
       LinkShortcut,
+      LinkCard,
       Collaboration.configure({ fragment }), // brings its own Yjs-aware undo/redo
     ],
     autofocus: true,
     onUpdate: ({ editor, transaction }) => {
       // Remote changes already carry their author's title update in the index doc.
-      if (!isChangeOrigin(transaction)) onLocalChange(editor.state.doc.firstChild?.textContent ?? "");
+      if (isChangeOrigin(transaction)) return;
+      const first = editor.state.doc.firstChild;
+      // A link card has no text of its own: it's titled by its page (or its link while loading).
+      onLocalChange(first?.type.name === "linkCard" ? String(first.attrs.title ?? first.attrs.url) : (first?.textContent ?? ""));
     },
     onTransaction,
   });

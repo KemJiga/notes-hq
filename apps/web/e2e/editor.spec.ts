@@ -385,3 +385,97 @@ test("move: drag & drop notes and folders, Move to… sheet, multi-select, and s
   await expect(noteRow(b, "Two")).toBeVisible();
   await expect(noteRow(b, "Three")).toBeVisible();
 });
+
+test("link previews: card from a pasted link, click-to-load embed, fallback, sync and reload", async ({ browser }) => {
+  const secret = newSecret();
+  const yt = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+  const asked: string[] = [];
+  const p = await device(browser, secret);
+  const origin = new URL(test.info().project.use.baseURL!).origin;
+  const outside: string[] = [];
+  p.on("request", (r) => void (!r.url().startsWith(origin) && !r.url().startsWith("data:") && outside.push(r.url())));
+  await p.context().route("https://www.youtube-nocookie.com/**", (r) => r.abort());
+  await p.context().route("**/v1/unfurl?**", async (r) => {
+    const link = new URL(r.request().url()).searchParams.get("url")!;
+    asked.push(link);
+    await new Promise((d) => setTimeout(d, 300)); // long enough to see the loading card
+    if (link !== yt) return r.fulfill({ status: 404, json: { error: "link previews are off" } });
+    return r.fulfill({ json: { url: link, title: "Never Gonna Give You Up", siteName: "YouTube", description: "The official video", image: png } });
+  });
+
+  await newNote(p);
+  await p.keyboard.type("Saved");
+  await p.keyboard.press("Enter");
+  // A real paste from the clipboard.
+  await p.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await p.evaluate((t) => navigator.clipboard.writeText(t), yt);
+  await p.keyboard.press("ControlOrMeta+v");
+  await expect(editor(p).locator("p", { hasText: yt })).toBeVisible();
+  await p.getByRole("button", { name: "Show as preview" }).click();
+  await expect(p.locator('.link-card[data-state="loading"]')).toBeVisible();
+  const card = p.locator('.link-card[data-state="loaded"]');
+  await expect(card.locator(".card-title")).toHaveText("Never Gonna Give You Up");
+  await expect(card).toContainText("The official video");
+  await expect(card).toContainText("YouTube");
+  expect(await card.locator("img").getAttribute("src")).toMatch(/^data:image\/jpeg;base64,/);
+  expect(outside, "nothing third-party loads before Play").toEqual([]);
+  await card.getByRole("button", { name: "Play video" }).click();
+  await expect(card.locator("iframe")).toHaveAttribute("src", /^https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ/);
+  await expect.poll(() => outside.some((u) => u.startsWith("https://www.youtube-nocookie.com/"))).toBe(true);
+
+  // A link the relay can't preview stays a plain link.
+  await caret(p, ".ProseMirror > p:last-child");
+  await p.keyboard.type("https://example.org/x");
+  await p.getByRole("button", { name: "Show as preview" }).click();
+  await expect(editor(p).locator('p a[href="https://example.org/x"]')).toBeVisible();
+  await expect(p.locator(".link-card")).toHaveCount(1);
+
+  // Turned off on this device: no offer.
+  await p.getByTitle("Sync settings").click();
+  await p.getByLabel("Link previews").uncheck();
+  await p.getByRole("button", { name: "Close" }).click();
+  await caret(p, ".ProseMirror > p:last-child");
+  await p.keyboard.press("Enter");
+  await p.keyboard.type("https://example.net/");
+  await expect(p.getByRole("button", { name: "Show as preview" })).toHaveCount(0);
+
+  // The card is in the note: it survives a reload and reaches another device, with no new fetch.
+  await p.reload();
+  await p.locator("aside li button", { hasText: "Saved" }).click();
+  await expect(p.locator(".link-card .card-title")).toHaveText("Never Gonna Give You Up");
+  const b = await device(browser, secret);
+  await expect(b.locator("aside li button", { hasText: "Saved" })).toBeVisible({ timeout: 15_000 });
+  await b.locator("aside li button", { hasText: "Saved" }).click();
+  await expect(b.locator(".link-card .card-title")).toHaveText("Never Gonna Give You Up", { timeout: 15_000 });
+  expect(asked).toEqual([yt, "https://example.org/x"]);
+});
+
+test("link previews: a leading card titles the note, a late result still lands, hard breaks aren't one link", async ({ browser }) => {
+  const p = await device(browser, newSecret());
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  await p.context().route("**/v1/unfurl?**", async (r) => {
+    await gate;
+    await r.fulfill({ json: { url: "https://a.example/", title: "Page A" } });
+  });
+  await newNote(p);
+  await p.keyboard.type("https://a.example/");
+  await p.getByRole("button", { name: "Show as preview" }).click();
+  await expect(p.locator('.link-card[data-state="loading"]')).toBeVisible();
+  await expect.poll(() => sidebarTitle(p)).toBe("https://a.example/");
+
+  // Leave the note before the preview arrives, then come back.
+  await p.getByRole("button", { name: "New note" }).click();
+  release();
+  await p.waitForTimeout(300);
+  await p.locator("aside li button", { hasText: "a.example" }).click();
+  await expect(p.locator(".link-card .card-title")).toHaveText("Page A");
+  await expect(p.locator("aside li button", { hasText: "Page A" })).toBeVisible();
+
+  await caret(p, ".ProseMirror > p:last-child");
+  await p.keyboard.type("https://b.example/");
+  await p.keyboard.press("Shift+Enter");
+  await p.keyboard.type("https://c.example/");
+  await expect(p.getByRole("button", { name: "Show as preview" })).toHaveCount(0);
+});

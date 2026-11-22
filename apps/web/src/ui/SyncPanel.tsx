@@ -1,4 +1,5 @@
 import { useState } from "preact/hooks";
+import { previewsEnabled, setPreviewsEnabled } from "../previews";
 import { engine, type SyncStatus } from "../sync/engine";
 import { defaultRelayUrl, joinLink, newSession, saveSession, type Session } from "../sync/session";
 
@@ -14,6 +15,7 @@ export function SyncPanel({ session, status, onChange, onClose }: Props) {
   const [paste, setPaste] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [previews, setPreviews] = useState(previewsEnabled);
 
   const apply = async (next: Session | null) => {
     setError("");
@@ -84,6 +86,12 @@ export function SyncPanel({ session, status, onChange, onClose }: Props) {
         </>
       )}
       {error && <p class="error">{error}</p>}
+      <hr />
+      <label class="switch">
+        <input type="checkbox" checked={previews} onChange={(e) => (setPreviewsEnabled(e.currentTarget.checked), setPreviews(e.currentTarget.checked))} />
+        Link previews
+      </label>
+      <p class="hint">Offers a preview card for links on their own line. It's fetched through your relay's preview service, which sees only the link, never your notes.</p>
     </div>
   );
 }
