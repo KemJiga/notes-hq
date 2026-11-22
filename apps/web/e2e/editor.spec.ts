@@ -373,6 +373,9 @@ test("move: drag & drop notes and folders, Move to… sheet, multi-select, and s
   await p.getByRole("dialog").getByRole("button", { name: "C", exact: true }).click();
   await expect(navItem(p, "C")).toContainText("3");
   await expect(navItem(p, "Unfiled")).toContainText("0");
+  await header(p).getByRole("button", { name: "Select" }).click(); // the sheet doesn't come back on its own
+  await expect(p.getByRole("dialog")).toHaveCount(0);
+  await header(p).getByRole("button", { name: "Done" }).click();
 
   // Everything synced.
   const b = await device(browser, secret);
