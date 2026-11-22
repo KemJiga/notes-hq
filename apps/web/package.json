@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json && tsc -p e2e/tsconfig.json",
+    "test": "bun test test",
     "e2e": "playwright test"
   },
   "dependencies": {

@@ -181,3 +181,73 @@ test("100k-word note opens and types without lag", async ({ browser }) => {
   expect(openMs).toBeLessThan(3000);
   expect(keyMs).toBeLessThan(50);
 });
+
+const tagInput = (p: Page) => p.getByLabel("Add tag", { exact: true });
+const noteTags = (p: Page) => p.locator(".tagbar .chip").allTextContents();
+const sideTag = (p: Page, name: string) => p.locator("nav.tags .chip", { hasText: `#${name}` });
+const listed = (p: Page) => p.locator("aside li button").evaluateAll((els) => els.map((e) => e.firstChild!.textContent).sort());
+
+async function tag(p: Page, name: string) {
+  await tagInput(p).fill(name);
+  await tagInput(p).press("Enter");
+}
+
+test("tags: add, autocomplete, AND filter, rename, delete", async ({ browser }) => {
+  const p = await device(browser, newSecret());
+  await newNote(p);
+  await p.keyboard.type("Alpha");
+  await tag(p, "Ideas");
+  await tag(p, "#ideas"); // same tag, case-insensitive
+  await expect.poll(() => noteTags(p)).toEqual(["ideas×"]);
+  await newNote(p);
+  await p.keyboard.type("Beta");
+  await expect(p.locator("#tag-suggestions option[value=ideas]")).toHaveAttribute("label", "1 note");
+  await tag(p, "ideas");
+  await tag(p, "home");
+  await expect.poll(() => noteTags(p)).toEqual(["home×", "ideas×"]);
+  await p.getByRole("button", { name: "Remove tag home" }).click();
+  await expect.poll(() => noteTags(p)).toEqual(["ideas×"]);
+  await tag(p, "home");
+
+  await sideTag(p, "ideas").click();
+  await expect.poll(() => listed(p)).toEqual(["Alpha", "Beta"]);
+  await sideTag(p, "home").click();
+  await expect.poll(() => listed(p)).toEqual(["Beta"]);
+  await expect(p.locator(".filter strong")).toHaveText("#ideas + #home");
+  await sideTag(p, "home").click();
+
+  p.once("dialog", (d) => d.accept("Thoughts"));
+  await p.locator(".filter").getByRole("button", { name: "Rename" }).click();
+  await expect.poll(() => noteTags(p)).toEqual(["home×", "thoughts×"]);
+  await expect(sideTag(p, "thoughts")).toContainText("2");
+  await expect(sideTag(p, "thoughts")).toHaveAttribute("aria-pressed", "true");
+
+  p.once("dialog", (d) => d.accept());
+  await p.locator(".filter").getByRole("button", { name: "Delete" }).click();
+  await expect.poll(() => noteTags(p)).toEqual(["home×"]);
+  await expect(sideTag(p, "thoughts")).toHaveCount(0);
+  await expect.poll(() => listed(p)).toEqual(["Alpha", "Beta"]);
+});
+
+test("tags: two devices tagging the same note offline both keep their tag", async ({ browser }) => {
+  const secret = newSecret();
+  const a = await device(browser, secret);
+  await newNote(a);
+  await a.keyboard.type("Shared");
+  const b = await device(browser, secret);
+  await b.locator("aside li button", { hasText: "Shared" }).click();
+  await b.evaluate(() => {
+    const w = window as unknown as { __ws: WebSocket[]; __block: boolean };
+    w.__block = true;
+    w.__ws.forEach((s) => s.close());
+  });
+  await expect(b.locator("button.status")).toHaveText(/offline/i);
+
+  await tag(a, "from-a");
+  await tag(b, "from-b");
+  await b.evaluate(() => {
+    (window as unknown as { __block: boolean }).__block = false;
+    dispatchEvent(new Event("online"));
+  });
+  for (const p of [a, b]) await expect.poll(() => noteTags(p), { timeout: 15_000 }).toEqual(["from-a×", "from-b×"]);
+});

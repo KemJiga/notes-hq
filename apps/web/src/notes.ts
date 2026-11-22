@@ -1,18 +1,21 @@
 /**
  * Data model.
- *   "index"       one Y.Doc: Y.Map "notes" of id -> Y.Map { title, createdAt, updatedAt, deleted }
+ *   "index"       one Y.Doc: Y.Map "notes" of id -> Y.Map { title, createdAt, updatedAt, deleted, tags },
+ *                 and Y.Map "tags" (see tags.ts)
  *   "note:<id>"   one Y.Doc per note: Y.XmlFragment "content" (ProseMirror document via y-prosemirror)
  * The index syncs eagerly; note bodies are opened (and synced) on demand,
  * so startup cost does not grow with the size of the archive.
  */
 import * as Y from "yjs";
 import { engine } from "./sync/engine";
+import { namesOf, tagMap } from "./tags";
 
 export interface NoteMeta {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
+  tags: string[];
 }
 
 export async function openIndex(): Promise<Y.Map<Y.Map<unknown>>> {
@@ -22,6 +25,7 @@ export async function openIndex(): Promise<Y.Map<Y.Map<unknown>>> {
 
 export function listNotes(notes: Y.Map<Y.Map<unknown>>): NoteMeta[] {
   const out: NoteMeta[] = [];
+  const tags = tagMap(notes);
   notes.forEach((m, id) => {
     if (m.get("deleted")) return;
     out.push({
@@ -29,6 +33,7 @@ export function listNotes(notes: Y.Map<Y.Map<unknown>>): NoteMeta[] {
       title: String(m.get("title") ?? ""),
       createdAt: Number(m.get("createdAt") ?? 0),
       updatedAt: Number(m.get("updatedAt") ?? 0),
+      tags: namesOf(m, tags),
     });
   });
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -41,6 +46,7 @@ export function createNote(notes: Y.Map<Y.Map<unknown>>): string {
   meta.set("title", "");
   meta.set("createdAt", now);
   meta.set("updatedAt", now);
+  meta.set("tags", new Y.Map<true>());
   notes.set(id, meta);
   return id;
 }
