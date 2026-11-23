@@ -1,7 +1,7 @@
 {
   "name": "notes-hq",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first notes that sync across your own devices through a relay you host.",
   "license": "MIT",
   "type": "module",
