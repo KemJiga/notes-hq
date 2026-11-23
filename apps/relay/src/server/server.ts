@@ -4,11 +4,14 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { WebSocketServer, type WebSocket } from "ws";
 import { ID_PATTERN, type ServerMsg } from "@notes-hq/protocol";
-import { handleFrame, migrate, RoomStore, type Peer, type Sql } from "../core/index.js";
+import { handleFrame, handleUnfurl, migrate, RoomStore, type Peer, type Sql } from "../core/index.js";
 import type { Config } from "./config.js";
+import { nodeFetcher } from "./fetcher.js";
 import { serveStatic } from "./static.js";
 
 const ROOM_PATH = /^\/v1\/rooms\/([A-Za-z0-9_-]+)$/;
+/** Link previews in flight at once. Each can hold a few MB, and the relay's real job is sync. */
+const MAX_UNFURLS = 8;
 
 class NodePeer implements Peer {
   private subs = new Set<string>();
@@ -42,11 +45,36 @@ export function startRelay(config: Config): Promise<RunningRelay> {
 
   const rooms = new Map<string, Set<NodePeer>>();
   const limits = { maxDataBytes: config.maxDataBytes, maxSubsPerPeer: config.maxSubsPerPeer };
+  let unfurling = 0;
 
   const server = createServer((req, res) => {
-    const path = new URL(req.url ?? "/", "http://x").pathname;
+    const url = new URL(req.url ?? "/", "http://x");
+    const path = url.pathname;
     if (path === "/healthz") {
       res.writeHead(200, { "content-type": "text/plain" }).end("ok");
+      return;
+    }
+    if (path === "/v1/unfurl") {
+      // Answered here even when off, so the app's SPA fallback never claims this path.
+      if (!config.unfurlEnabled || req.method !== "GET") {
+        res.writeHead(404, { "content-type": "application/json" }).end('{"error":"link previews are off"}');
+        return;
+      }
+      if (unfurling >= MAX_UNFURLS) {
+        res.writeHead(503, { "content-type": "application/json", "retry-after": "5" }).end('{"error":"busy"}');
+        return;
+      }
+      unfurling++;
+      const gone = new AbortController();
+      res.on("close", () => gone.abort()); // the client left: stop fetching for it
+      // handleUnfurl never rejects; it turns every failure into a JSON error response.
+      const header = (h: string) => {
+        const v = req.headers[h];
+        return typeof v === "string" ? v : null;
+      };
+      void handleUnfurl(url, header, config.allowedOrigins, nodeFetcher, gone.signal)
+        .then(async (r) => void res.writeHead(r.status, Object.fromEntries(r.headers)).end(await r.text()))
+        .finally(() => unfurling--);
       return;
     }
     if (config.staticDir && (req.method === "GET" || req.method === "HEAD")) {

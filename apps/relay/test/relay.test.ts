@@ -23,6 +23,7 @@ before(async () => {
     allowedOrigins: [],
     maxDataBytes: 1024,
     maxSubsPerPeer: 100,
+    unfurlEnabled: false,
   });
   const addr = relay.server.address();
   assert(addr && typeof addr === "object");

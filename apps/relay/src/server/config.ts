@@ -10,6 +10,8 @@ export interface Config {
   allowedOrigins: string[];
   maxDataBytes: number;
   maxSubsPerPeer: number;
+  /** Serve `GET /v1/unfurl` (link previews). Off unless UNFURL_ENABLED=true. */
+  unfurlEnabled: boolean;
 }
 
 function int(name: string, fallback: number): number {
@@ -32,5 +34,6 @@ export function loadConfig(): Config {
       .filter(Boolean),
     maxDataBytes: int("MAX_DATA_BYTES", DEFAULT_MAX_DATA_BYTES),
     maxSubsPerPeer: int("MAX_SUBS_PER_PEER", 10_000),
+    unfurlEnabled: process.env.UNFURL_ENABLED === "true",
   };
 }

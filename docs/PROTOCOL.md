@@ -73,6 +73,10 @@ Relays must accept ids that match `^[A-Za-z0-9_-]{16,64}$` and must treat them a
 5. Upload a snapshot (`compact` with `upTo = seq`) when catch-up replayed many entries. The reference client does this at 100 or more entries.
 6. When switching to a different session, reset every doc's `seq` to 0 and queue the full local state for upload.
 
-## 6. Versioning
+## 6. Link previews (optional)
+
+Not part of sync. Relays may serve `GET /v1/unfurl?url=<link>` when their operator enables it. The response is JSON `UnfurlPreview` (`packages/protocol`): `{ url, title?, description?, siteName?, image? }`, where `url` is the address after redirects and `image` is a `data:` URL. Errors return `4xx`/`5xx` with `{ "error": "<reason>" }`. `404` means the relay doesn't offer previews. CORS follows the same origin allow-list as sockets. Clients must treat every failure as "no preview" and keep the plain link.
+
+## 7. Versioning
 
 The version is part of the URL path (`/v1/`). Breaking changes get a new path, and relays may serve several versions side by side.

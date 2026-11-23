@@ -3,6 +3,7 @@ import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import type * as Y from "yjs";
 import type { Tree } from "../folders";
 import { openNoteContent, touchNote } from "../notes";
+import { previewsEnabled } from "../previews";
 import { addTag, namesOf, removeTag, tagMap } from "../tags";
 import { FolderChip } from "./move";
 
@@ -75,15 +76,19 @@ function TagBar({ id, index, tags, tree, folderId }: Omit<Props, "onDelete">) {
 export function NoteEditor({ id, index, tags, tree, folderId, onDelete }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<Editor | null>(null);
+  const [cards, setCards] = useState<typeof import("./tiptap") | null>(null);
+  // A line that's just a link offers a preview card (pasted or typed).
+  const line = editor && cards && previewsEnabled() ? cards.linkLine(editor) : null;
   // Re-render the toolbar on every transaction so active states follow the selection.
   const [, rerender] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
     let ed: Editor | undefined;
     let cancelled = false;
-    void Promise.all([openNoteContent(id), import("./tiptap")]).then(([fragment, { createEditor }]) => {
+    void Promise.all([openNoteContent(id), import("./tiptap")]).then(([fragment, mod]) => {
       if (cancelled) return;
-      ed = createEditor(el.current!, fragment, (title) => touchNote(index, id, title), () => rerender(0));
+      ed = mod.createEditor(el.current!, fragment, (title) => touchNote(index, id, title), () => rerender(0));
+      setCards(mod);
       setEditor(ed);
     });
     return () => {
@@ -95,6 +100,12 @@ export function NoteEditor({ id, index, tags, tree, folderId, onDelete }: Props)
   return (
     <div class="editor">
       <div class="toolbar format" role="toolbar" aria-label="Formatting">
+        {/* First, so it's in view even when the toolbar scrolls on phones. */}
+        {line && (
+          <button class="offer" onMouseDown={(e) => e.preventDefault()} onClick={() => cards!.showAsPreview(editor!)}>
+            Show as preview
+          </button>
+        )}
         {TOOLS.map(([label, title, active, run]) => {
           const on = !!editor && !!active && editor.isActive(...active);
           return (
